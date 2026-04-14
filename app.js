@@ -2,7 +2,7 @@
 'use strict';
 
 // =================== Build Info ===================
-const LOCAL_SHA = '82f865d';
+const LOCAL_SHA = 'dev'; // Injected by CI during deployment
 const BUILD_DATE = '2026-04-14';
 const REPO_OWNER = 'Comfac-Global-Group';
 const REPO_NAME = 'bp-app';

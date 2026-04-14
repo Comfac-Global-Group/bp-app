@@ -23,6 +23,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Inject build SHA
+        run: |
+          SHA="${{ github.sha }}"
+          sed -i "s/const LOCAL_SHA = 'dev'; \/\/ Injected by CI during deployment/const LOCAL_SHA = '${SHA:0:7}';\/\/ Injected by CI/" app.js
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact

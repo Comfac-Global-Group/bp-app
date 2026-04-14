@@ -126,11 +126,11 @@ git push origin main
 4. **Manifest missing shortcuts** — FRD §10 mentions PWA shortcuts, but `manifest.json` had no `shortcuts` array.
 
 ### Fixes Applied
-- **LOCAL_SHA** updated to `82f865d`
 - **IndexedDB** bumped to version `2` with safe index migration logic using `transaction.objectStore('entries')` to add `user_id` index on existing stores
 - **Multi-file queue** implemented — `state.fileQueue` holds remaining files; after saving an entry, the next file auto-loads into OCR preview; cancel clears the queue
 - **Manifest shortcuts** added — "Take Photo" (`?shortcut=camera`) and "View Logs" (`?shortcut=logs`) with inline SVG icons
 - **URL shortcut handling** added in `app.js` — parses `?shortcut=` on init and triggers camera/logs automatically
+- **LOCAL_SHA injection** — changed hardcoded SHA to `'dev'` placeholder; GitHub Actions workflow now injects the actual commit SHA at deploy time, eliminating the chicken-and-egg problem of embedding a commit hash in source code
 
 ### Validation
 - Ran `node -c app.js` → syntax valid
