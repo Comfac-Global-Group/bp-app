@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0d7377" />
+  <title>BPLog</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="styles.css" />
+  <!-- Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.5.31/dist/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/idb@8/build/umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/exifr/dist/full.umd.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div class="title">🩺 BPLog</div>
+      <div class="nav">
+        <button class="nav-btn active" data-screen="home">Home</button>
+        <button class="nav-btn" data-screen="logs">Logs</button>
+        <button class="nav-btn" data-screen="reports">Reports</button>
+        <button class="nav-btn" data-screen="images">Images</button>
+        <button class="nav-btn" data-screen="settings">Settings</button>
+      </div>
+    </header>
+
+    <main>
+      <!-- Home / Capture -->
+      <section id="screen-home" class="screen active">
+        <div class="card">
+          <div class="card-title">Select User</div>
+          <div class="user-list" id="home-user-list"></div>
+          <div class="flex gap-2 mt-2">
+            <input type="text" id="new-user-name" placeholder="New user name" />
+            <button class="btn btn-primary" id="btn-add-user">Add</button>
+          </div>
+        </div>
+
+        <div class="actions">
+          <div class="action-card" id="btn-take-photo">
+            <div class="icon">📷</div>
+            <div class="label">Take Photo</div>
+            <div class="hint">Camera capture</div>
+          </div>
+          <div class="action-card" id="btn-upload-photo">
+            <div class="icon">🖼️</div>
+            <div class="label">Upload Photo</div>
+            <div class="hint">Gallery select</div>
+          </div>
+        </div>
+        <input type="file" id="input-camera" accept="image/*" capture="environment" style="display:none" />
+        <input type="file" id="input-gallery" accept="image/*" multiple style="display:none" />
+
+        <div class="card">
+          <div class="card-title">Recent Readings</div>
+          <div id="recent-entries"></div>
+        </div>
+      </section>
+
+      <!-- OCR / Entry Edit -->
+      <section id="screen-ocr" class="screen">
+        <div class="card">
+          <div class="card-title">Review & Edit</div>
+          <div class="preview-wrap">
+            <img id="ocr-preview" src="" alt="Preview" />
+          </div>
+          <div id="ocr-canvas-wrap" style="display:none;"></div>
+          <div class="flex gap-2">
+            <div style="flex:1">
+              <label>Systolic</label>
+              <input type="number" id="ocr-sys" />
+            </div>
+            <div style="flex:1">
+              <label>Diastolic</label>
+              <input type="number" id="ocr-dia" />
+            </div>
+            <div style="flex:1">
+              <label>Heart Rate</label>
+              <input type="number" id="ocr-hr" />
+            </div>
+          </div>
+          <label>Machine Brand</label>
+          <select id="ocr-brand">
+            <option value="">Unknown / Other</option>
+            <option value="Omron">Omron</option>
+            <option value="A&D">A&D</option>
+            <option value="Microlife">Microlife</option>
+          </select>
+          <label>Note</label>
+          <textarea id="ocr-note" rows="2" placeholder="Free-text note..."></textarea>
+          <label>Tags</label>
+          <div class="flex gap-2">
+            <input type="text" id="ocr-tag-input" placeholder="Type tag and press Enter" />
+          </div>
+          <div class="tag-list" id="ocr-tags"></div>
+          <div class="flex gap-2 mt-3">
+            <button class="btn btn-secondary" id="btn-ocr-cancel">Cancel</button>
+            <button class="btn btn-primary btn-block" id="btn-ocr-save">Save Reading</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Logs -->
+      <section id="screen-logs" class="screen">
+        <div class="card">
+          <div class="card-title">Filters</div>
+          <div class="filter-bar">
+            <input type="date" id="filter-start" />
+            <input type="date" id="filter-end" />
+            <select id="filter-category">
+              <option value="">All Categories</option>
+              <option value="Normal">Normal</option>
+              <option value="Elevated">Elevated</option>
+              <option value="Stage 1">Stage 1</option>
+              <option value="Stage 2">Stage 2</option>
+              <option value="Crisis">Crisis</option>
+            </select>
+            <select id="filter-sort">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+            </select>
+          </div>
+          <div class="tag-list" id="log-tag-filters"></div>
+        </div>
+        <div id="log-entries"></div>
+        <div id="log-empty" class="empty" style="display:none">No readings found.</div>
+      </section>
+
+      <!-- Entry Detail (inline expanded view) -->
+      <section id="screen-detail" class="screen">
+        <div class="card" id="detail-card"></div>
+      </section>
+
+      <!-- Reports -->
+      <section id="screen-reports" class="screen">
+        <div class="card">
+          <div class="card-title">Report Options</div>
+          <div class="filter-bar">
+            <input type="date" id="report-start" />
+            <input type="date" id="report-end" />
+          </div>
+          <label>Tag filter (optional)</label>
+          <div class="tag-list" id="report-tag-filters"></div>
+          <label class="flex gap-2" style="align-items:center; margin-top:8px;">
+            <input type="checkbox" id="report-include-images" />
+            <span>Include images in PDF (larger file)</span>
+          </label>
+          <div class="flex gap-2 mt-3">
+            <button class="btn btn-primary btn-block" id="btn-generate-pdf">Generate PDF Report</button>
+            <button class="btn btn-secondary" id="btn-print-report">Print View</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Summary Statistics</div>
+          <div id="report-stats"></div>
+        </div>
+
+        <div class="chart-box">
+          <canvas id="chart-sysdia"></canvas>
+        </div>
+        <div class="chart-box">
+          <canvas id="chart-hr"></canvas>
+        </div>
+        <div class="chart-box">
+          <canvas id="chart-ppmap"></canvas>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Tag Analytics</div>
+          <div id="report-tag-analytics"></div>
+        </div>
+      </section>
+
+      <!-- Image Manager -->
+      <section id="screen-images" class="screen">
+        <div class="card">
+          <div class="flex-between">
+            <div class="card-title">Image Storage</div>
+            <div class="text-muted" id="storage-gauge">Calculating…</div>
+          </div>
+          <div class="flex gap-2 mt-2">
+            <button class="btn btn-danger" id="btn-delete-selected">Delete Selected</button>
+            <button class="btn btn-outline" id="btn-delete-orphans">Delete Orphans</button>
+          </div>
+        </div>
+        <div id="image-list"></div>
+      </section>
+
+      <!-- Export / Import -->
+      <section id="screen-export" class="screen">
+        <div class="card">
+          <div class="card-title">Export</div>
+          <div class="flex gap-2 mt-2">
+            <button class="btn btn-primary" id="btn-export-json">Export JSON</button>
+            <button class="btn btn-primary" id="btn-export-zip">Export Image ZIP</button>
+            <button class="btn btn-primary" id="btn-export-combined">Export Combined ZIP</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-title">Import</div>
+          <input type="file" id="import-file" accept=".json,.zip" />
+          <label class="flex gap-2" style="align-items:center; margin-top:8px;">
+            <input type="checkbox" id="import-overwrite" />
+            <span>Overwrite existing entries with same ID</span>
+          </label>
+          <button class="btn btn-primary btn-block mt-2" id="btn-import">Import</button>
+          <div id="import-log" class="text-muted mt-2"></div>
+        </div>
+      </section>
+
+      <!-- Settings -->
+      <section id="screen-settings" class="screen">
+        <div class="card">
+          <div class="card-title">Profile</div>
+          <label>Name</label>
+          <input type="text" id="setting-name" />
+          <label>Date of Birth</label>
+          <input type="date" id="setting-dob" />
+          <label>Physician Name</label>
+          <input type="text" id="setting-physician" />
+          <button class="btn btn-primary btn-block mt-3" id="btn-save-profile">Save Profile</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">App</div>
+          <button class="btn btn-outline btn-block" id="btn-install-pwa">Add to Home Screen</button>
+          <button class="btn btn-outline btn-block mt-2" id="btn-go-export">Export / Import</button>
+          <div class="text-muted mt-2">Version 1.1 • BPLog</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Modal: confirm -->
+  <div class="overlay" id="modal-overlay">
+    <div class="modal">
+      <div class="card-title" id="modal-title">Confirm</div>
+      <p id="modal-body"></p>
+      <div class="flex gap-2 mt-3">
+        <button class="btn btn-secondary" id="modal-cancel">Cancel</button>
+        <button class="btn btn-danger" id="modal-confirm">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: processing -->
+  <div class="overlay" id="loading-overlay">
+    <div class="modal" style="text-align:center">
+      <div class="card-title">Processing…</div>
+      <p class="text-muted" id="loading-text">Please wait</p>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
