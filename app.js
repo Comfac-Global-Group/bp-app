@@ -445,11 +445,13 @@ async function runOCR(dataUrl) {
   try {
     await worker.setParameters({
       tessedit_char_whitelist: '0123456789',
-      tessedit_pageseg_mode: '6',
+      tessedit_pageseg_mode: '11', // sparse text — finds scattered numbers across image
     });
     const result = await worker.recognize(canvas.toDataURL('image/png'));
     const text   = result.data.text;
-    const nums   = text.match(/\b\d{2,3}\b/g) || [];
+    // Merge runs of single digits separated by spaces ("1 2 0" → "120", "8 5" → "85")
+    const merged = text.replace(/\b(\d)(\s+\d\b)+/g, m => m.replace(/\s+/g, ''));
+    const nums   = merged.match(/\b\d{2,3}\b/g) || [];
     const brand  = detectBrand(text);
     if (nums.length >= 3) {
       const n = nums.map(Number).sort((a, b) => b - a);
