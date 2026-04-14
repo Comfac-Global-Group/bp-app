@@ -383,3 +383,73 @@ EXIF datetime extraction **is in the FRD** — §4.2 Image Capture and §11 Tech
 | Multi-field EXIF fallback | ✅ FIXED |
 | Silent catch | ✅ FIXED (bare `catch {}`) |
 | User can edit timestamp before save | ✅ FIXED |
+
+---
+
+## OCR Context Research & Algorithm Redesign — 2026-04-14 (Claude Sonnet 4.6)
+
+### Summary
+Extended OCR extraction session: documented device-specific display layout for Omron HEM-7121, redesigned the extraction algorithm, and updated FRD §4.3 + §11 accordingly.
+
+### OCR Engine Change
+- **Old:** Tesseract.js v5 (WASM, ~6 MB) — caused service worker CORS errors on Chrome/Android PWA installs; blob worker approach was blocked
+- **New:** ocrad.js (~300 KB, pure JS) — no WASM workers, no CORS issues, smaller footprint
+
+### Omron HEM-7121 Display Layout (Primary Test Device)
+The HEM-7121 wrist monitor has a fixed LCD layout:
+- Top row: `OMRON` (left) and `Intelli Sense` (right)
+- Systolic reading (3 digits) with `SYS mmHg` label below
+- Diastolic reading (2–3 digits) with `DIA mmHg` label below
+- Pulse/HR reading (2–3 digits) with `Pulse /min` label below
+- Bottom row: `Start`, `Stop`, `OK` button labels + `HEM-7121` model number
+
+This label layout is the basis for **Algorithm D (label-proximity)** — highest-confidence extraction.
+
+### Extraction Algorithm Pipeline (D→A→B→C)
+| Algorithm | Method | Confidence |
+|-----------|--------|-----------|
+| D: Label-proximity | Regex: number adjacent to `SYS` / `DIA` / `Pulse` keywords | Highest |
+| A: Separator | Regex: `NNN/NN` or `NNN\|NN` patterns | High |
+| B: Range + PP | Physiological range filter + pulse pressure validation (20–100 mmHg) | Medium |
+| C: Range-only | First in-range systolic + diastolic candidates | Fallback |
+
+Dual-pass OCR: normal image AND inverted image — both scored, best result kept.
+
+### Device Detection
+`detectDevice(text)` matches:
+- Brand: `omron`, `microlife`, `a&d` keywords
+- Model: `HEM-NNN`, `UA-NNN`, `BP-NNN` regex patterns
+
+### UI Improvement — Model Display in Hint
+When OCR extraction succeeds AND brand/model detected:
+- Green hint shown: `"Detected: Omron HEM-7121 — review values below."`
+
+When extraction fails:
+- Amber hint with raw OCR text (up to 120 chars) for manual guidance
+
+### FRD Updates Applied
+- **§1 Overview** — updated to reference ocrad.js (was Tesseract.js)
+- **§4.3 OCR Processing** — full rewrite: library, preprocessing pipeline, HEM-7121 layout diagram, multi-algorithm table, validation rules, device detection, EXIF section, testing plan
+- **§11 Tech Stack** — OCR row updated to ocrad.js; bundle size estimate revised (~500–700 KB, was 800 KB–1.2 MB)
+
+### Testing Plan (documented in FRD §4.3)
+- Per-device test log: photograph each supported monitor (HEM-7121, HEM-705, UA-651, BP652) under good/bad lighting
+- Edge cases: angled shots, glare, partial occlusion
+- Algorithm fallback audit: confirm D→A→B→C→manual degradation
+- Track user correction rate in QA notes
+
+### Status
+| Item | Status |
+|------|--------|
+| ocrad.js in use | ✅ (replaced Tesseract.js) |
+| Algorithm D (label-proximity) | ✅ Implemented |
+| Algorithm A (separator) | ✅ Implemented |
+| Algorithm B (range+pp) | ✅ Implemented |
+| Algorithm C (range-only) | ✅ Implemented |
+| `detectDevice()` — brand | ✅ Implemented |
+| `detectDevice()` — model (HEM regex) | ✅ Implemented |
+| Model shown in UI hint | ✅ FIXED (green success hint) |
+| FRD §4.3 updated | ✅ |
+| FRD §11 updated | ✅ |
+| OCR confirmed working on HEM-7121 | ⚠️ IN TESTING — sample size insufficient for statistical confidence |
+| Testing plan documented | ✅ |

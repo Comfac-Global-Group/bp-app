@@ -6,7 +6,7 @@
 
 ## 1. Overview
 
-BPLog is a self-hosted Progressive Web App (PWA) for capturing and logging blood pressure readings from photos. Tesseract.js (WebAssembly) performs OCR entirely on-device. All data — images, logs, charts, PDF generation — stays local. No data is ever transmitted to any external server.
+BPLog is a self-hosted Progressive Web App (PWA) for capturing and logging blood pressure readings from photos. **ocrad.js** (pure JavaScript) performs OCR entirely on-device. All data — images, logs, charts, PDF generation — stays local. No data is ever transmitted to any external server.
 
 **Deployment target:** Static file bundle behind NPM on PC03 → `bp.comfac-it.com`
 
@@ -80,14 +80,89 @@ BPLog is a self-hosted Progressive Web App (PWA) for capturing and logging blood
 - Image shown in preview panel; OCR triggered only after user confirms preview
 
 ### 4.3 OCR Processing
-- **Library:** Tesseract.js v5 (WASM, fully on-device)
-- **Pre-processing pipeline:**
-  1. Grayscale via Canvas API
-  2. Contrast enhancement
-  3. Optional user crop box before OCR
-- **Parse target:** three numeric groups → systolic / diastolic / heart rate
-- All extracted values shown in **editable fields** before save — no auto-save without confirmation
-- **Machine brand detection:** best-effort color/logo signature vs local registry (Omron, A&D, Microlife); user can set manually via dropdown
+
+#### Library
+**ocrad.js** (pure JavaScript, ~300 KB) — runs entirely on-device with no WASM workers. Replaced Tesseract.js v5 (WASM) to avoid service worker CORS restrictions and eliminate a ~6 MB WASM payload.
+
+#### Pre-processing Pipeline
+1. Scale image UP to a minimum width of 1800 px (maintains aspect ratio) — larger canvas improves OCR digit accuracy on small LCD displays
+2. Convert to grayscale via `ImageData` luminance calculation
+3. Apply binary threshold at luminance 128 — pixels above → white, below → black
+4. Run two passes: normal (black-on-white) **and** inverted (white-on-black)
+5. Score both results and keep the higher-confidence extraction
+
+#### Known Device Layout — Omron HEM-7121
+The primary test device is the **Omron HEM-7121**, a wrist blood pressure monitor with an LCD display. Understanding its fixed label layout drives the extraction algorithm:
+
+```
+┌──────────────────────────────────┐
+│  OMRON           Intelli Sense   │
+│                                  │
+│         123      ← Systolic      │
+│  SYS mmHg                        │
+│          80      ← Diastolic     │
+│  DIA mmHg                        │
+│          72      ← Pulse         │
+│  Pulse /min                      │
+│                                  │
+│  Start       Stop        OK      │
+│            HEM-7121              │
+└──────────────────────────────────┘
+```
+
+**Key text labels present on the display:**
+- `OMRON` — brand identifier (top)
+- `Intelli Sense` — model feature label (top)
+- `SYS` / `SYS mmHg` — systolic label (appears below the systolic reading)
+- `DIA` / `DIA mmHg` — diastolic label (appears below the diastolic reading)
+- `Pulse /min` — heart-rate label (appears below the pulse reading)
+- `Start`, `Stop`, `OK` — button labels (bottom row)
+- `HEM-7121` — model number (bottom)
+
+**Model number regex:** `/HEM[-\s]?\d{3,4}[A-Z]*/i` — matches HEM-7121, HEM7121, HEM-705, etc.
+
+#### Multi-Algorithm Extraction Pipeline
+The pipeline tries four algorithms in order of confidence, stopping at the first valid result:
+
+| Priority | Algorithm | Trigger | Example match |
+|----------|-----------|---------|---------------|
+| D (highest) | **Label-proximity** | Finds a number adjacent to `SYS` or `DIA` keyword in OCR text | `123 SYS` / `SYS 123` |
+| A | **Separator pattern** | Finds `NNN/NN` or `NNN\|NN` in text | `123/80` |
+| B | **Range + pulse pressure** | Picks candidates within physiological ranges (sys 90–220, dia 50–130) where `sys−dia` is 20–100 mmHg | — |
+| C (lowest) | **Range-only** | Falls back to first in-range systolic and diastolic candidates | — |
+
+**Validation rules applied to all algorithms:**
+- Systolic: 90–220 mmHg
+- Diastolic: 50–130 mmHg
+- Diastolic < Systolic
+- Pulse pressure (sys − dia): 20–100 mmHg
+
+**Heart rate detection:**
+- Label-proximity: extracts `Pulse/min`-adjacent number
+- Fallback: first number in range 40–180 not already assigned to sys/dia
+
+#### Device Detection
+`detectDevice(text)` scans the combined OCR text of both passes for brand and model strings:
+- Brand: keyword match (`omron`, `microlife`, `a&d`)
+- Model: regex match against `HEM-NNN`, `UA-NNN`, `BP-NNN` patterns
+
+If both brand and model are detected and readings are successfully extracted, a **green confirmation hint** is shown: `"Detected: Omron HEM-7121 — review values below."`
+
+If extraction fails, an **amber warning hint** shows up to 120 characters of raw OCR text to aid manual entry.
+
+#### Testing Plan
+OCR accuracy is inherently device-specific. Testing strategy:
+
+1. **Per-device test log** — photograph each supported monitor model (HEM-7121, HEM-705, UA-651, BP652) under good lighting; record algorithm that fired and extraction accuracy.
+2. **Edge-case photos** — low light, angled/glare shots, partial occlusion.
+3. **Algorithm fallback audit** — deliberately blur/crop photos to confirm graceful degradation: D → A → B → C → manual.
+4. **User correction rate** — track (via QA-log) how often users must edit OCR-extracted values before saving.
+
+All extracted values remain **editable before save** — OCR is advisory, not authoritative.
+
+#### EXIF Timestamp Extraction
+Via `exifr`. Fallback chain: `DateTimeOriginal → CreateDate → DateTime → DateTimeDigitized → Date.now()`.
+Displayed in an editable `<input type="datetime-local">` with source label `(from photo EXIF)` or `(now — no EXIF)`. User can correct before saving.
 
 ### 4.4 Log Entry Schema
 ```json
@@ -325,7 +400,7 @@ BPLog supports a user-configurable dark mode for low-light usage.
 | Layer | Choice | Rationale |
 |-------|--------|-----------|
 | Framework | Vanilla JS + Web Components (or Preact) | No build step; lightweight; small bundle |
-| OCR | Tesseract.js v5 | WASM; fully on-device; no external API |
+| OCR | ocrad.js | Pure JS ~300 KB; fully on-device; no WASM workers; replaced Tesseract.js to avoid SW CORS issues |
 | Storage | IndexedDB via `idb` wrapper | Blob support for images; no storage limit beyond device |
 | ZIP | JSZip | Client-side ZIP; no server |
 | EXIF | exifr | Lightweight; reads `DateTimeOriginal` |
@@ -334,7 +409,7 @@ BPLog supports a user-configurable dark mode for low-light usage.
 | Styling | Custom CSS | Full control; minimal footprint |
 | Hosting | Static files — Nginx / Forgejo Pages | Behind NPM on PC03 |
 
-> **Bundle size estimate:** ~800KB–1.2MB after minification (Tesseract.js WASM is the largest component). Cached by Service Worker after first load.
+> **Bundle size estimate:** ~500–700 KB after minification (ocrad.js ~300 KB is the largest single asset; CDN assets cached by Service Worker after first load).
 
 ---
 

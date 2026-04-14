@@ -399,7 +399,15 @@ async function loadFileIntoOCR(file) {
     if (values.dia) document.getElementById('ocr-dia').value = values.dia;
     if (values.hr)  document.getElementById('ocr-hr').value  = values.hr;
     if (values.brand) document.getElementById('ocr-brand').value = values.brand;
-    if (!values.sys && !values.dia) {
+    if (values.sys && values.dia) {
+      const detectedLabel = [values.brand, values.model].filter(Boolean).join(' ');
+      if (detectedLabel) {
+        hint.style.display = 'block';
+        hint.style.background = '#d4edda';
+        hint.style.color = '#155724';
+        hint.textContent = `Detected: ${detectedLabel} — review values below.`;
+      }
+    } else {
       hint.style.display = 'block';
       hint.style.background = '#fff3cd';
       hint.style.color = '#856404';
@@ -434,36 +442,47 @@ function blobToDataUrl(blob) {
 }
 
 async function runOCR(dataUrl) {
-  // Try normal then inverted — LCD displays (light digits on dark) need inversion
+  // Pass 1: normal threshold
   updateLoadingText('Scanning image…');
   const canvas1 = await preprocessForOCR(dataUrl, false);
   const text1   = OCRAD(canvas1);
   const result1 = extractBP(text1);
-  if (result1.sys && result1.dia) return { ...result1, rawText: text1 };
-
-  updateLoadingText('Retrying inverted…');
+  // Pass 2: inverted — LCD displays (light digits on dark) need inversion
+  updateLoadingText('Scanning inverted…');
   const canvas2 = await preprocessForOCR(dataUrl, true);
   const text2   = OCRAD(canvas2);
   const result2 = extractBP(text2);
-  if (result2.sys && result2.dia) return { ...result2, rawText: text2 };
-
-  // Return whichever pass found more
-  const best = (result2.sys || result2.dia) ? result2 : result1;
-  return { ...best, rawText: best === result2 ? text2 : text1 };
+  // Pick the pass that scored higher (label > separator > range+pp > range-only > null)
+  const score   = r => ({ 'label-SYS/DIA': 4, separator: 3, 'range+pp': 2, 'range-only': 1 })[r.algo] ?? 0;
+  const best    = score(result1) >= score(result2) ? result1 : result2;
+  const bestTxt = best === result1 ? text1 : text2;
+  // Device detection runs on both passes combined for best text coverage
+  const { brand, model } = detectDevice(text1 + '\n' + text2);
+  return { ...best, brand, model, rawText: bestTxt };
 }
 
 // ---- Multi-algorithm BP extraction ----------------------------------------
 function extractBP(text) {
   const nums = (text.match(/\d+/g) || []).map(Number).filter(n => n >= 10 && n <= 300);
 
-  // A: explicit separator  "120/80"  "120|80"  common on some monitors
+  // Algorithm D: label-proximity — Omron/similar print label next to reading
+  // Matches number within ~20 chars of SYS / DIA / Pulse label (either order)
+  const sysLbl   = text.match(/(\d{2,3})\s{0,20}SYS/i)            || text.match(/SYS\s{0,20}(\d{2,3})/i);
+  const diaLbl   = text.match(/(\d{2,3})\s{0,20}DIA/i)            || text.match(/DIA\s{0,20}(\d{2,3})/i);
+  const pulseLbl = text.match(/(\d{2,3})\s{0,20}(?:Pulse|\/min)/i) || text.match(/(?:Pulse|\/min)\s{0,20}(\d{2,3})/i);
+  if (sysLbl && diaLbl) {
+    const sys = +sysLbl[1], dia = +diaLbl[1];
+    if (validPair(sys, dia)) return buildResult(sys, dia, nums, 'label-SYS/DIA', pulseLbl ? +pulseLbl[1] : null);
+  }
+
+  // Algorithm A: explicit separator "120/80" "120|80"
   const sepMatch = text.match(/(\d{2,3})\s*[\/|\\]\s*(\d{2,3})/);
   if (sepMatch) {
     const a = +sepMatch[1], b = +sepMatch[2];
     if (validPair(a, b)) return buildResult(a, b, nums, 'separator');
   }
 
-  // B: range + pulse-pressure check (sys−dia must be 20–100 mmHg)
+  // Algorithm B: range + pulse-pressure validity (sys−dia 20–100 mmHg)
   const sysCands = nums.filter(n => n >= 90 && n <= 220).sort((a, b) => b - a);
   const diaCands = nums.filter(n => n >= 50 && n <= 130).sort((a, b) => b - a);
   for (const sys of sysCands) {
@@ -472,30 +491,44 @@ function extractBP(text) {
     }
   }
 
-  // C: range only — accept any plausible pair regardless of pulse pressure
+  // Algorithm C: range only — weakest fallback
   const sys3 = sysCands[0] ?? null;
   const dia3  = sys3 ? (diaCands.find(n => n < sys3) ?? null) : null;
   if (sys3 && dia3) return buildResult(sys3, dia3, nums, 'range-only');
 
-  return { sys: null, dia: null, hr: null, brand: detectBrand(text), algo: null };
+  return { sys: null, dia: null, hr: null, algo: null };
 }
 
 function validPair(sys, dia) {
-  return sys >= 90 && sys <= 220 && dia >= 50 && dia <= 130 && sys > dia && (sys - dia) >= 20 && (sys - dia) <= 100;
+  return sys >= 90 && sys <= 220 && dia >= 50 && dia <= 130 && sys > dia
+      && (sys - dia) >= 20 && (sys - dia) <= 100;
 }
 
-function buildResult(sys, dia, nums, algo) {
-  const hr    = nums.find(n => n >= 40 && n <= 180 && n !== sys && n !== dia) ?? null;
-  const brand = detectBrand(''); // brand detection less reliable with binary threshold
-  return { sys, dia, hr, brand, algo };
+function buildResult(sys, dia, nums, algo, hrHint = null) {
+  const hr = (hrHint !== null && hrHint >= 40 && hrHint <= 180)
+    ? hrHint
+    : (nums.find(n => n >= 40 && n <= 180 && n !== sys && n !== dia) ?? null);
+  return { sys, dia, hr, algo };
 }
 
-function detectBrand(text) {
+// ---- Device detection ------------------------------------------------------
+// Runs on combined OCR text from both passes for best coverage
+function detectDevice(text) {
   const t = text.toLowerCase();
-  if (t.includes('omron'))     return 'Omron';
-  if (t.includes('microlife')) return 'Microlife';
-  if (t.includes('a&d'))       return 'A&D';
-  return null;
+  let brand = null, model = null;
+
+  // Brand
+  if (t.includes('omron'))      brand = 'Omron';
+  else if (t.includes('microlife')) brand = 'Microlife';
+  else if (t.includes('a&d'))   brand = 'A&D';
+
+  // Model numbers by brand family
+  const hemMatch = text.match(/HEM[-\s]?\d{3,4}[A-Z]*/i);   // Omron: HEM-7121, HEM-7130, HEM-705CP
+  const uaMatch  = text.match(/UA[-\s]?\d{3,4}[A-Z]*/i);    // A&D:   UA-767, UA-651
+  const bpMatch  = text.match(/BP[-\s]?[A-Z]?\d{2,3}[A-Z]*/i); // Microlife: BP A100, BP B2
+  model = (hemMatch || uaMatch || bpMatch)?.[0]?.toUpperCase().replace(/\s/g, '-') || null;
+
+  return { brand, model };
 }
 // ---------------------------------------------------------------------------
 
