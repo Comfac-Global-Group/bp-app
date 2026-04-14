@@ -304,8 +304,19 @@ If "Include images" is on: thumbnails appended per row or on a following page gr
 | Offline | All features work offline: OCR, charting, PDF, log CRUD |
 | Mobile-first | 360–430px viewport; all touch targets min 44×44px |
 | HTTPS | Required for `getUserMedia` + PWA install; NPM + Let's Encrypt on PC03 |
-| **Night Theme** | Toggle in Settings; persists in `localStorage`; CSS variables switch via `[data-theme="dark"]` |
 | **Shortcut** | If the OS supports it, the installed PWA may offer shortcut actions (camera, logs) via manifest `shortcuts` |
+
+### 10.2 Day / Night Theme
+
+BPLog supports a user-configurable dark mode for low-light usage.
+
+- **Toggle location:** Settings screen
+- **Persistence:** `localStorage` key `bplog_theme`
+- **Values:** `light` (default) or `dark`
+- **Implementation:** CSS custom properties (variables) switch via `html[data-theme="dark"]` attribute
+- **Chart compatibility:** Chart.js canvases re-render with theme-aware axis, grid, and legend colors when the toggle changes or when the Reports screen is visited
+- **System preference fallback:** On first launch, if no manual preference is stored, the app respects `prefers-color-scheme: dark`
+- **Scope:** All screens, modals, charts, and printed PDF views must remain readable in both themes
 
 ---
 
