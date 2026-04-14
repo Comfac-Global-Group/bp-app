@@ -183,6 +183,21 @@ git push origin main
 
 ---
 
+## 12:20 — Fix CI Version Injection (Live Site Showing "vdev")
+
+### Issue
+The live site displayed **"vdev"** instead of a version number. The GitHub Actions workflow’s `sed` command was malformed — it used `/` as the delimiter while the replacement string contained unescaped `//` comment syntax, causing the pattern match to fail silently. `sed` returns exit code 0 even when no match is found, so the workflow continued and deployed `app.js` with `'dev'` still in place.
+
+### Fix
+- Rewrote the workflow step to use `|` as the `sed` delimiter, avoiding all slash-escaping issues.
+- Added `set -e` so the step fails fast on any error.
+- Added `grep` verification assertions that explicitly check `app.js` contains the injected version and SHA values. If injection fails, the workflow stops before deployment.
+
+### Files Changed
+- `.github/workflows/deploy-pages.yml`
+
+---
+
 ## Known Limitations / Notes
 - OCR accuracy depends on image quality and contrast; values are always presented in editable fields before save.
 - PWA install prompt requires HTTPS and a supporting browser; fallback is manual "Add to Home Screen."
