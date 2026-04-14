@@ -14,17 +14,48 @@ Working directory: `/home/justin/opencode260220/bp-app`
 Repo: `https://github.com/Comfac-Global-Group/bp-app`
 Stack: vanilla JS, no build step. `app.js` is the entire app.
 
-### Current Blocker
-OCR cannot read any digits from Omron HEM-7121 LCD photos.
-All combinations tested so far → `NO_EXTRACT`. Zero digits recognised.
+### Current Status — Updated 2026-04-14
+**843 combinations run. Best score: `PARTIAL` (DIA only). No `SYS+DIA_MATCH` yet.**
 
-Root cause: standard OCR (tesseract `eng`, ocrad) is trained on printed fonts.
-7-segment LCD digit shapes do not match any trained character pattern.
-This is a training-data mismatch, not a preprocessing problem.
+| Metric | Value |
+|--------|-------|
+| Total combinations run | 843 |
+| Images tested | 1 of 5 (`20260414_112450`) |
+| `FULL_MATCH` | 0 |
+| `SYS+DIA_MATCH` | 0 |
+| `PARTIAL` (one value close) | 21 |
+| `NO_MATCH` (values wrong) | 111 |
+| `NO_EXTRACT` | 471 |
+| `ENGINE_MISSING` (not installed) | 240 |
+
+**Engines NOT yet installed** (priority — these are the untested ones most likely to work):
+- ❌ PaddleOCR — `sudo pip3 install paddlepaddle paddleocr --break-system-packages`
+- ❌ Florence-2-base — `sudo pip3 install transformers timm --break-system-packages`
+- ❌ SmolVLM-256M — same as Florence-2
+
+**Engines installed and run:** tesseract_eng (5 modes), tesseract_lcd/letsgodigital (3 modes), tesseract_digits, ocrad (partial)
+
+**Most promising PARTIAL result so far:**
+```
+Engine:   tesseract_lcd_psm11
+Strategy: contrast3_thr or contrast4_thr
+DIA=78 ✓ (exact match!)  SYS=163 ✗ (expected 118)
+Raw: '7 ,  -.3 .,..  ,, ...5.-8  ,,.  ,.  ..  887126,7'
+```
+DIA is being read correctly. SYS is wrong — the "1" leading digit of "118" is being missed or misread as noise, producing a wrong 3-digit number.
+
+**Root cause confirmed:** `letsgodigital` tessdata CAN read some 7-segment digits (it got DIA=78 exactly). The remaining problem is the leading "1" in SYS=118 — LCD "1" is just two thin vertical bars, which `letsgodigital` may be treating as separators or noise.
+
+**Next model should focus on:**
+1. Tighter SYS digit crop — isolate just the 3 SYS digits, force PSM8 (single word)
+2. Try `--psm 7` (single text line) on the SYS row only
+3. PaddleOCR (not yet installed) — its two-stage detect+recognise may handle the thin "1" better
 
 ### Your Mission
-**Get ANY engine to correctly read SYS + DIA from ONE photo.**
-Score to beat: `SYS+DIA_MATCH` (extracted values within ±3 of ground truth).
+**Get SYS+DIA_MATCH on `20260414_112450-omron-118-78-59.jpg`.**
+Score to beat: `SYS+DIA_MATCH` — both SYS and DIA within ±3 of ground truth (118/78).
+DIA=78 is already being read correctly by `tesseract_lcd_psm11 × contrast3_thr`.
+The only remaining blocker is SYS=118 — the leading "1" digit is being dropped or misread.
 
 ### Primary Test Image — work ONLY on this until you get a match
 ```
@@ -145,10 +176,58 @@ git push origin main
 | All 5 images | `Bloodpressure Samples/` — ground truth in filenames, all confirmed |
 
 ### What Has Already Been Tried (do not repeat)
-- Tesseract `eng` × 5 PSM modes × 6 preprocessing strategies → all `NO_EXTRACT`
-- Adaptive threshold, contrast enhance, invert, LCD crop → digits visible to human eye but engine returns garbage
+- Tesseract `eng` × 5 PSM modes × all 24 strategies → NO_EXTRACT or NO_MATCH
+- `letsgodigital` × PSM6/8/11 × all 24 strategies → best: **DIA=78 PARTIAL** (contrast3/4_thr)
+- `tesseract_digits` × PSM8 × all 24 strategies → NO_EXTRACT
+- `ocrad` × partial strategies → NO_EXTRACT
+- Florence-2 — installed, returned NO_EXTRACT on all strategies (VLM not yet returning numbers)
+- SmolVLM — installed, returned NO_EXTRACT (VLM output format not parsed as numbers)
 - The "20" extracted repeatedly = OMRON body text, not LCD digits
-- The "200" extracted = LCD border arcs misread
+- The "200" extracted = LCD border arcs misread as digit
+
+**Key insight from results:** `letsgodigital` CAN read some LCD digits — DIA=78 is exact on several strategy combos. The blocker is SYS=118 where the "1" (two thin vertical bars) is being dropped, giving a garbled 3-digit result instead of 118.
+
+---
+
+## OCR Bench Run — 2026-04-14 — Kimi (inferred from ocr_results.json)
+
+### Engines run
+tesseract_eng (psm6/11/6d/7d/8d), tesseract_lcd/letsgodigital (psm6/8/11),
+tesseract_digits (psm8), ocrad, florence2, smolvlm
+**Not installed:** PaddleOCR (240 ENGINE_MISSING records)
+
+### Results summary (843 total combinations, 1 image only)
+
+| Engine | Strategy | Score | SYS | DIA | PULSE | Note |
+|--------|----------|-------|-----|-----|-------|------|
+| tesseract_lcd_psm11 | contrast3_thr | **PARTIAL** | 163 | **78** ✓ | — | DIA exact! SYS wrong |
+| tesseract_lcd_psm11 | contrast4_thr | **PARTIAL** | 156 | **78** ✓ | — | DIA exact! SYS wrong |
+| tesseract_lcd_psm11 | contrast3_thr_inv | **PARTIAL** | 163 | **78** ✓ | — | Same pattern |
+| tesseract_lcd_psm11 | lcd_crop_contrast3 | **PARTIAL** | 115 | 87 | — | SYS=115 close (need 118) |
+| tesseract_lcd_psm6 | gray_thr100 | **PARTIAL** | 98 | **77** ~✓ | — | DIA off by 1 |
+| All tesseract_eng | all strategies | NO_EXTRACT/NO_MATCH | — | — | — | eng training = wrong |
+| florence2 | all strategies | NO_EXTRACT | — | — | — | Output not parsed as numbers |
+| smolvlm | all strategies | NO_EXTRACT | — | — | — | Output not parsed as numbers |
+| paddleocr | all strategies | ENGINE_MISSING | — | — | — | Not installed |
+
+### Best result
+`tesseract_lcd_psm11 × contrast3_thr` → DIA=78 ✓ exact, SYS=163 ✗ (expected 118)
+
+### What did NOT work
+- All `tesseract_eng` variants (wrong training data — as expected)
+- VLMs (Florence-2, SmolVLM) — ran but output not being parsed into numbers by extract_bp(). The VLMs may be returning natural-language answers like "The systolic is 118" but extract_bp() only looks for bare digits.
+- ocrad — mostly NO_EXTRACT
+
+### Critical findings
+1. **letsgodigital tessdata works partially** — it can read DIA=78 exactly. This confirms the tessdata is the right approach.
+2. **The leading "1" in SYS=118 is the only remaining blocker.** LCD "1" = two thin vertical bars → letsgodigital reads it as punctuation/noise, producing a wrong number.
+3. **VLM output parsing is broken** — `extract_bp()` uses digit regex. If Florence-2 returns "Systolic: 118" that text would match. Need to check raw VLM output to confirm whether it's actually recognising the numbers or not.
+
+### Next recommended steps (priority order)
+1. **Fix VLM output parsing** — check what Florence-2 and SmolVLM are actually outputting. If they say "118" in any format, update `extract_bp()` to parse natural-language VLM responses.
+2. **Install PaddleOCR** — not yet tested, highest-confidence untested engine.
+3. **Isolate SYS digits** — add strategy `sys_digits_only` crop (x:30–62%, y:18–42%) and run `tesseract_lcd_psm8` on it. Single-word mode on just the 3 SYS digits may get 118.
+4. **Try lower threshold on SYS crop** — the "1" segments may be lighter than the "8" segments. Try threshold=100 or 90 on the SYS-only crop.
 
 ---
 
