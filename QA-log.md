@@ -252,12 +252,15 @@ Screenshot of live site showed **"vdev"** beside the logo, and no proper version
 
 ---
 
-## Known Limitations / Notes
-- OCR accuracy depends on image quality and contrast; values are always presented in editable fields before save.
-- PWA install prompt requires HTTPS and a supporting browser; fallback is manual "Add to Home Screen."
-- Chart.js zoom plugin not included in v1.2.
-- GitHub API version check may be rate-limited or fail offline gracefully.
-- Bundle relies on CDN libraries; first load caches all assets via Service Worker for full offline use.
+## 12:35 — Header Wrapping & App Icon Blank Fix
+
+### Issues Found
+1. **Header text squished on narrow screens** — the sticky header tried to force everything onto a single row, causing the logo and nav buttons to overlap or truncate on small mobile viewports.
+2. **Heart emoji appeared blank when saved to home screen** — some Android/iOS launchers do not render emoji characters inside SVG `data:` URIs used as PWA icons, resulting in a blank or generic grey icon.
+
+### Fixes Applied
+- **Header CSS** — added `flex-wrap: wrap` to `header`, changed `.left` and `.nav` to `flex: 1 1 auto` so they can wrap to a second row when space is tight, and removed duplicate CSS declarations.
+- **App icon** — replaced the emoji heart (`❤️`) in `manifest.json` with a pure **SVG path heart shape** (`<path d="M96 154s-48-28-48-68c0-20 16-36 36-36 14 0 26 8 32 20 6-12 18-20 32-20 20 0 36 16 36 36 0 40-48 68-48 68z" fill="white"/>`). This guarantees consistent rendering on every device and launcher, while keeping the same visual style (white heart on teal background).
 
 ---
 
