@@ -21,7 +21,7 @@ INSTALL ALL ENGINES (run once, requires sudo)
 
   # LCD-specific tessdata (7-segment trained):
   sudo wget -O /usr/share/tesseract-ocr/5/tessdata/letsgodigital.traineddata \
-    "https://github.com/Shreeshrii/tessdata_ssd/raw/master/letsgodigital.traineddata"
+    "https://github.com/arturaugusto/display_ocr/raw/master/letsgodigital/letsgodigital.traineddata"
 
   # Digit-only tessdata:
   sudo wget -O /usr/share/tesseract-ocr/5/tessdata/digits.traineddata \
@@ -349,8 +349,7 @@ def _engine_paddleocr():
             if img.mode != "RGB":
                 img = img.convert("RGB")
             img.save(tmp)
-            ocr = PaddleOCR(use_angle_cls=True, lang="en", use_gpu=False,
-                            show_log=False)
+            ocr = PaddleOCR(use_angle_cls=True, lang="en")
             result = ocr.ocr(tmp, cls=True)
             # result is list of lists: [[[x,y],...], (text, confidence)]
             lines = []
@@ -457,17 +456,17 @@ ENGINES = {
     "tesseract_lcd_psm6":
         ("Tesseract letsgodigital (LCD-trained) PSM6",
          "sudo wget -O /usr/share/tesseract-ocr/5/tessdata/letsgodigital.traineddata "
-         "https://github.com/Shreeshrii/tessdata_ssd/raw/master/letsgodigital.traineddata",
+         "https://github.com/arturaugusto/display_ocr/raw/master/letsgodigital/letsgodigital.traineddata",
          _engine_tesseract("--psm 6 -l letsgodigital")),
     "tesseract_lcd_psm8":
         ("Tesseract letsgodigital (LCD-trained) PSM8 single-word",
          "sudo wget -O /usr/share/tesseract-ocr/5/tessdata/letsgodigital.traineddata "
-         "https://github.com/Shreeshrii/tessdata_ssd/raw/master/letsgodigital.traineddata",
+         "https://github.com/arturaugusto/display_ocr/raw/master/letsgodigital/letsgodigital.traineddata",
          _engine_tesseract("--psm 8 -l letsgodigital")),
     "tesseract_lcd_psm11":
         ("Tesseract letsgodigital (LCD-trained) PSM11 sparse",
          "sudo wget -O /usr/share/tesseract-ocr/5/tessdata/letsgodigital.traineddata "
-         "https://github.com/Shreeshrii/tessdata_ssd/raw/master/letsgodigital.traineddata",
+         "https://github.com/arturaugusto/display_ocr/raw/master/letsgodigital/letsgodigital.traineddata",
          _engine_tesseract("--psm 11 -l letsgodigital")),
 
     "tesseract_digits_psm8":
@@ -530,6 +529,21 @@ def extract_bp(text):
     d = next((x for x in dc if s and x < s), None) if s else None
     if s and d: return s, d, None, "C:range"
     return None, None, None, "FAIL"
+
+def rescue_sys_leading_one(sys_e, dia_e):
+    """Prepend '1' to a dropped-leading-1 SYS reading and revalidate.
+    LCD digit '1' = only segments b+c (right-side bars) — looks like noise to OCR.
+    If SYS comes back as 2 digits in range 18-99, it's almost certainly 118-199."""
+    if sys_e is not None and 18 <= sys_e <= 99:
+        candidate = sys_e + 100
+        if dia_e is not None and valid_pair(candidate, dia_e):
+            return candidate
+    return sys_e
+
+def extract_bp_with_rescue(text):
+    sys_e, dia_e, pulse_e, algo = extract_bp(text)
+    sys_e = rescue_sys_leading_one(sys_e, dia_e)
+    return sys_e, dia_e, pulse_e, algo
 
 # ---------------------------------------------------------------------------
 # Scoring
@@ -644,7 +658,7 @@ def run_bench(filter_image=None, filter_engine=None, filter_strategy=None,
 
                 ocr_ms = int((time.perf_counter() - t1) * 1000)
                 text   = raw_text.strip().replace("\n", " ")
-                sys_e, dia_e, pulse_e, algo = extract_bp(text)
+                sys_e, dia_e, pulse_e, algo = extract_bp_with_rescue(text)
                 sc     = score_result(sys_e, dia_e, pulse_e, gt)
                 rank   = SCORE_RANK.get(sc, 0)
 
