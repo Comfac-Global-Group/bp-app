@@ -453,3 +453,32 @@ When extraction fails:
 | FRD §11 updated | ✅ |
 | OCR confirmed working on HEM-7121 | ⚠️ IN TESTING — sample size insufficient for statistical confidence |
 | Testing plan documented | ✅ |
+
+---
+
+## OCR Failure — Chrome Ubuntu 24.04 Desktop & Firefox Android — 2026-04-14T17:00+08:00
+
+### Observation
+During live testing, Tesseract.js OCR failed with an **unknown error** on two distinct platforms:
+- **Chrome on Ubuntu 24.04 (desktop)**
+- **Firefox Android app**
+
+In both cases, the OCR pipeline did not return usable values. The loading overlay showed "Running OCR…" and then silently returned empty `sys`/`dia`/`hr` fields with no actionable error message to the user.
+
+### Impact
+- Users are forced to **enter values manually** every time the error occurs
+- No fallback guidance or retry mechanism is presented
+- Failure is device/browser-specific, suggesting WASM initialization, worker spawning, or memory constraints as likely causes
+
+### Status
+| Item | Status |
+|------|--------|
+| Reproducible on Chrome Ubuntu 24.04 | ✅ Confirmed |
+| Reproducible on Firefox Android | ✅ Confirmed |
+| User-friendly fallback message | ❌ MISSING — only blank fields shown |
+| Retry OCR button on failure | ❌ MISSING |
+| Root cause identified (exact Tesseract error) | ❌ UNKNOWN — needs deeper logging |
+
+### Notes
+- The editable fields in the OCR review screen already act as an implicit fallback, but there is no explicit message telling the user *why* the values are blank or what to do next.
+- A future build should catch OCR promise rejection explicitly, show "OCR could not read this image — please enter the values manually," and optionally offer a **Retry** button.
