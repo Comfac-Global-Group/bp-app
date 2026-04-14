@@ -8,81 +8,147 @@
 
 If you are an AI model picking up this project, **read this block first**.
 
+### Project
+BPLog — offline PWA for logging blood pressure readings from photos.
+Working directory: `/home/justin/opencode260220/bp-app`
+Repo: `https://github.com/Comfac-Global-Group/bp-app`
+Stack: vanilla JS, no build step. `app.js` is the entire app.
+
 ### Current Blocker
 OCR cannot read any digits from Omron HEM-7121 LCD photos.
-All engine × strategy combinations return `NO_EXTRACT`. Zero text recognised.
-Root cause: standard OCR engines are trained on printed fonts, not 7-segment LCD shapes.
+All combinations tested so far → `NO_EXTRACT`. Zero digits recognised.
+
+Root cause: standard OCR (tesseract `eng`, ocrad) is trained on printed fonts.
+7-segment LCD digit shapes do not match any trained character pattern.
+This is a training-data mismatch, not a preprocessing problem.
 
 ### Your Mission
-Get ANY OCR engine to correctly read SYS + DIA from ONE photo.
+**Get ANY engine to correctly read SYS + DIA from ONE photo.**
+Score to beat: `SYS+DIA_MATCH` (extracted values within ±3 of ground truth).
 
-### Primary Test Image
+### Primary Test Image — work ONLY on this until you get a match
 ```
-Bloodpressure Samples/20260414_112450-omron-118-78-59.jpg
+File:     Bloodpressure Samples/20260414_112450-omron-118-78-59.jpg
 Expected: SYS=118, DIA=78, PULSE=59
+Device:   Omron HEM-7121, Samsung Galaxy A17 5G photo, 4080×3060px
 ```
-Work ONLY on this image until you achieve `SYS+DIA_MATCH` or `FULL_MATCH`.
-Only test other images after success — to check the solution generalises.
+Only test the other 4 images AFTER you achieve a match — to check it generalises.
 
-### Testing Methodology
-1. **Single image first.** Do not spread effort across all 5 images until step 1 works.
-2. **Install missing engines first** — priority order is: PaddleOCR → letsgodigital → ocrad → digits:
-   ```bash
-   # PaddleOCR — modern edge-optimised engine, highest expected accuracy (Priority 1)
-   sudo pip3 install paddlepaddle paddleocr --break-system-packages
+### Step 1 — Install all missing engines (do all at once)
+```bash
+cd /home/justin/opencode260220/bp-app
 
-   # GNU ocrad CLI — same engine as browser ocrad.js (Priority 2)
-   sudo apt-get install -y ocrad
+# Priority 1 — PaddleOCR: modern two-stage edge OCR, most likely to work
+sudo pip3 install paddlepaddle paddleocr --break-system-packages
 
-   # Tesseract LCD-specific trained data (Priority 3)
-   sudo wget -O /usr/share/tesseract-ocr/5/tessdata/letsgodigital.traineddata \
-     "https://github.com/Shreeshrii/tessdata_ssd/raw/master/letsgodigital.traineddata"
+# Priority 2 — ocrad CLI: same engine as ocrad.js used in the browser PWA
+sudo apt-get install -y ocrad
 
-   # Tesseract digits-only trained data (Priority 4)
-   sudo wget -O /usr/share/tesseract-ocr/5/tessdata/digits.traineddata \
-     "https://github.com/tesseract-ocr/tessdata/raw/main/digits.traineddata"
+# Priority 3 — letsgodigital: Tesseract trained specifically on 7-segment LCD
+sudo wget -q -O /usr/share/tesseract-ocr/5/tessdata/letsgodigital.traineddata \
+  "https://github.com/Shreeshrii/tessdata_ssd/raw/master/letsgodigital.traineddata"
 
-   # Florence-2-base VLM (Priority 5 — if all OCR engines fail)
-   sudo pip3 install transformers timm --break-system-packages
-   # First run auto-downloads ~232MB model to ~/.cache/huggingface/
+# Priority 4 — digits tessdata
+sudo wget -q -O /usr/share/tesseract-ocr/5/tessdata/digits.traineddata \
+  "https://github.com/tesseract-ocr/tessdata/raw/main/digits.traineddata"
 
-   # SmolVLM-256M VLM (Priority 6 — alternative micro VLM)
-   # Same install as Florence-2. First run downloads ~500MB.
-   ```
-3. **Run the benchmark:**
-   ```bash
-   cd /home/justin/opencode260220/bp-app
-   python3 scripts/ocr_bench.py --image 20260414 --save-debug 2>&1
-   ```
-4. **Inspect debug images** at `/tmp/bp_debug/` — check that digits look clean before OCR.
-5. **Test ocrad CLI directly** on a debug image to see raw output:
-   ```bash
-   ocrad /tmp/bp_debug/20260414_112450-omron-118-78-59_lcd_crop_thr128.png
-   ```
-6. If still failing, try new preprocessing strategies — add them to `STRATEGIES` in `scripts/ocr_bench.py` and re-run.
-7. When you find a working combination (or hit a dead end), **append to QA-log.md**:
-   ```
-   ## OCR Bench Run — YYYY-MM-DD — <your model name>
-   ### Engines installed: ...
-   ### Best result: strategy=X  engine=Y  score=Z
-   ### Raw OCR text: "..."
-   ### What did NOT work: ...
-   ### Next recommended step: ...
-   ```
-8. Commit and push:
-   ```bash
-   git add scripts/ocr_bench.py QA-log.md scripts/ocr_results.json
-   git commit -m "test(ocr): <model> bench run YYYY-MM-DD — <brief result>"
-   git push origin main
-   ```
+# Priority 5 — VLMs (if all OCR engines fail — these understand images naturally)
+sudo pip3 install transformers timm --break-system-packages
+# Florence-2-base (~232MB) and SmolVLM-256M (~500MB) download on first run
+```
 
-### Key Facts
-- `ocrad` CLI = same engine as `ocrad.js` in the browser PWA. CLI result predicts browser result.
-- `letsgodigital.traineddata` is specifically trained on 7-segment LCD digits — highest priority test.
-- "OMRON", "SYS mmHg", "DIA mmHg" text is on the **white plastic body**, NOT the LCD screen.
-- LCD bounding box in photos: approx **x:27–88%, y:12–63%** of the 4080×3060 image.
-- Benchmark script: `scripts/ocr_bench.py` — read the docstring at the top for full instructions.
-- Results accumulate in: `scripts/ocr_results.json`
+### Step 2 — Run the benchmark on the single target image
+```bash
+python3 scripts/ocr_bench.py --image 20260414 --save-debug 2>&1
+```
+This runs all installed engines × all 25 preprocessing strategies.
+Results append to `scripts/ocr_results.json`.
+Debug images saved to `/tmp/bp_debug/` — view them to see what each strategy produces.
+
+### Step 3 — If still NO_EXTRACT, try targeted experiments
+```bash
+# Test ocrad directly on the best-looking debug image
+ocrad /tmp/bp_debug/20260414_112450-omron-118-78-59_lcd_crop_thr128.png
+
+# Test PaddleOCR directly on the original colour photo
+python3 -c "
+from paddleocr import PaddleOCR
+ocr = PaddleOCR(use_angle_cls=True, lang='en', use_gpu=False, show_log=False)
+r = ocr.ocr('Bloodpressure Samples/20260414_112450-omron-118-78-59.jpg', cls=True)
+for line in (r[0] or []): print(line[1])
+"
+
+# Test Florence-2 directly
+python3 -c "
+from transformers import AutoProcessor, AutoModelForCausalLM
+import torch
+from PIL import Image
+m = AutoModelForCausalLM.from_pretrained('microsoft/Florence-2-base', trust_remote_code=True)
+p = AutoProcessor.from_pretrained('microsoft/Florence-2-base', trust_remote_code=True)
+img = Image.open('Bloodpressure Samples/20260414_112450-omron-118-78-59.jpg')
+inp = p(text='<OCR>', images=img, return_tensors='pt')
+out = m.generate(**inp, max_new_tokens=200)
+print(p.decode(out[0], skip_special_tokens=True))
+"
+```
+
+### Step 4 — If an engine produces ANY text output, iterate on preprocessing
+The goal is to make the LCD digits as clean as possible before they hit the engine.
+Add new strategies to `STRATEGIES` dict in `scripts/ocr_bench.py` and re-run.
+Ideas to try if stuck:
+- Tighter LCD crop: `x:32–75%, y:18–55%` (current crop includes border noise)
+- Scale DOWN to ~400px wide before OCR (very large images confuse some engines)
+- Colour-range isolation: HEM-7121 LCD background is grey-green (~RGB 180/190/170), digits are dark grey (~RGB 60/70/60)
+- Dilate/erode the digit strokes (morphological operations via numpy)
+
+### Step 5 — Report findings and commit
+When you finish (success or dead end), append to QA-log.md:
+```markdown
+## OCR Bench Run — YYYY-MM-DD — <your model name>
+
+### Engines installed this session
+- ...
+
+### Results summary
+| Engine | Strategy | Score | Raw text | Notes |
+|--------|----------|-------|----------|-------|
+| ...    | ...      | ...   | ...      | ...   |
+
+### Best result
+strategy=`X`  engine=`Y`  score=`Z`  extracted=SYS/DIA/PULSE
+
+### What did NOT work (brief)
+- ...
+
+### Next recommended step
+...
+```
+Then commit and push:
+```bash
+git add scripts/ocr_bench.py QA-log.md scripts/ocr_results.json
+git commit -m "test(ocr): <model> bench run YYYY-MM-DD — <brief result e.g. PaddleOCR SYS+DIA_MATCH>"
+git push origin main
+```
+
+### Key Facts (read before testing)
+| Fact | Detail |
+|------|--------|
+| `ocrad` CLI | Same engine as `ocrad.js` in the browser PWA — CLI result = browser result |
+| `letsgodigital` | Tesseract tessdata trained on 7-segment LCD specifically |
+| PaddleOCR | Needs colour image — use `raw_colour` or `lcd_crop_colour` strategy |
+| VLMs (Florence-2, SmolVLM) | Needs colour image — use `raw_colour` strategy |
+| Body text | "OMRON", "SYS mmHg", "DIA mmHg", "PULSE /min" is on the **white plastic body**, NOT the LCD |
+| LCD location | Approx `x:27–88%, y:12–63%` of 4080×3060 image |
+| Ground truth | Encoded in filename: `brand-SYS-DIA-PULSE.jpg` |
+| Benchmark script | `scripts/ocr_bench.py` — full instructions in docstring at top of file |
+| Results log | `scripts/ocr_results.json` — cumulative across all sessions |
+| All 5 images | `Bloodpressure Samples/` — ground truth in filenames, all confirmed |
+
+### What Has Already Been Tried (do not repeat)
+- Tesseract `eng` × 5 PSM modes × 6 preprocessing strategies → all `NO_EXTRACT`
+- Adaptive threshold, contrast enhance, invert, LCD crop → digits visible to human eye but engine returns garbage
+- The "20" extracted repeatedly = OMRON body text, not LCD digits
+- The "200" extracted = LCD border arcs misread
 
 ---
 
