@@ -2,8 +2,8 @@
 'use strict';
 
 // =================== Build Info ===================
-const APP_VERSION = 'dev'; // Injected by CI during deployment
-const BUILD_SHA = 'dev';   // Injected by CI during deployment
+const APP_VERSION = 'dev'; /* CI_INJECT_VERSION */
+const BUILD_SHA = 'dev'; /* CI_INJECT_SHA */
 const BUILD_DATE = '2026-04-14';
 const REPO_OWNER = 'Comfac-Global-Group';
 const REPO_NAME = 'bp-app';

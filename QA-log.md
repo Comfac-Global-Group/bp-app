@@ -198,6 +198,35 @@ The live site displayed **"vdev"** instead of a version number. The GitHub Actio
 
 ---
 
+## 12:25 — Root-Cause Fix: Live Site Shows "vdev" + Stale Cache
+
+### Issue Reported
+Screenshot of live site showed **"vdev"** beside the logo, and no proper version number.
+
+### Investigation
+- Direct `curl` to deployed `app.js` returned `APP_VERSION = '1.01'` — proving the CI *was* injecting a version.
+- However, `1.01` is wrong for a repo with ~10 commits. The expected version should have been ~`1.10`.
+- The browser screenshot showed `'dev'` (`vdev`), meaning the browser served a **stale cached** `app.js` from the old `bplog-v1` cache.
+
+### Root Cause 1: Shallow Checkout in CI
+`actions/checkout@v4` defaults to `fetch-depth: 1`. Therefore `git rev-list --count HEAD` always returned `1`, making every deployment claim version `1.01`.
+
+**Fix:** Added `fetch-depth: 0` to the checkout step so the full commit history is available for accurate version calculation.
+
+### Root Cause 2: Service Worker Cache Never Invalidated
+`sw.js` used a hardcoded cache name (`bplog-v1`) and **cache-first** for `app.js`. Once a browser cached the old file, it never fetched the updated one.
+
+**Fix:** Rewrote `sw.js` to:
+- Use **network-first** for the app shell (`index.html`, `app.js`, `styles.css`, `manifest.json`) so online users always get the latest code immediately
+- Keep **cache-first** for heavy CDN assets (Tesseract.js, Chart.js, etc.) so offline capability remains fast
+- Bump cache name to `bplog-v2` to force old cache eviction on the next SW activation
+- Separate `SHELL_ASSETS` and `CDN_ASSETS` for clarity
+
+### FRD Update
+- Added **§10.2 Day / Night Theme** as a dedicated subsection with detailed requirements (toggle location, persistence, CSS variable strategy, chart compatibility, system preference fallback).
+
+---
+
 ## Known Limitations / Notes
 - OCR accuracy depends on image quality and contrast; values are always presented in editable fields before save.
 - PWA install prompt requires HTTPS and a supporting browser; fallback is manual "Add to Home Screen."
@@ -234,7 +263,40 @@ Monitor: https://github.com/Comfac-Global-Group/bp-app/actions
 | `set -e` fast-fail guard | ✅ FIXED — verified in `deploy-pages.yml` |
 | `grep` injection assertions | ✅ FIXED — verified in `deploy-pages.yml` |
 | `app.js` placeholders (`APP_VERSION`/`BUILD_SHA = 'dev'`) | ✅ CONFIRMED correct |
-| Live site showing correct version | ✅ RESOLVED — Actions run triggered by `3b13719` |
+| Live site showing correct version | ❌ STILL SHOWING `vdev` — screenshot confirmed 16:34 2026-04-14 |
 
 ### Audit Finding Correction (2026-04-14 — Claude Sonnet 4.6)
 **BUG-01 (BP category classification) — RETRACTED.** On re-examination the cascade logic in `computeCategory()` is correct: Stage 2 (`>= 140 || >= 90`) is checked before Stage 1 (`>= 130 || >= 80`), so no misclassification occurs. The original audit finding was a false positive. BUG-01 is closed with no code change required.
+
+---
+
+## CI Injection — Second Fix Attempt (2026-04-14 — Claude Sonnet 4.6)
+
+### Root Cause (revised)
+`sed` injection was still failing after the delimiter fix. Root cause: `sed` regex matching is inherently fragile — special characters (`*`, `/`, quotes) in the match pattern caused silent no-ops even with `|` as delimiter. The `grep` guards would then also fail, causing the entire workflow job to abort before deployment. Live site continued serving the original `vdev` build (initial deploy from `c9a7a49`).
+
+### Fix Applied
+Replaced `sed`-based injection entirely with a **Python string replacement** approach:
+- No regex — uses exact literal `str.replace()` matching
+- No shell escaping issues whatsoever
+- `assert` statements replace `grep` checks — Python exits non-zero with a clear error message if any replacement fails
+- `sw.js` `CACHE_NAME` now also injected (`bplog-dev` → `bplog-{version}`) to bust the service worker cache on every deploy
+
+### Placeholder Markers (unique strings CI replaces)
+| File | Placeholder | Replaced With |
+|------|------------|---------------|
+| `app.js` | `'dev'; /* CI_INJECT_VERSION */` | `'{version}'; /* CI_INJECT_VERSION */` |
+| `app.js` | `'dev'; /* CI_INJECT_SHA */` | `'{sha}'; /* CI_INJECT_SHA */` |
+| `sw.js` | `'bplog-dev'; /* CI_INJECT_CACHE */` | `'bplog-{version}'; /* CI_INJECT_CACHE */` |
+
+### Files Changed
+- `.github/workflows/deploy-pages.yml` — full rewrite of inject step
+- `app.js` — updated placeholder comment markers
+- `sw.js` — added `CACHE_NAME` placeholder for CI injection
+
+| Item | Status |
+|------|--------|
+| `sed` replaced with Python `str.replace()` | ✅ |
+| `sw.js` `CACHE_NAME` now CI-injected | ✅ |
+| Unique `/* CI_INJECT_* */` marker comments in source | ✅ |
+| Live site version badge correct | ⏳ PENDING — awaiting Actions run |
