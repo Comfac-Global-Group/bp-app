@@ -14,8 +14,22 @@ Working directory: `/home/justin/opencode260220/bp-app`
 Repo: `https://github.com/Comfac-Global-Group/bp-app`
 Stack: vanilla JS, no build step. `app.js` is the entire app.
 
+### ⚠️ Hard Constraint — Browser PWA Only
+**The final OCR solution MUST run inside a browser on a phone. No server. No native SDK.**
+Python benchmark tools are validation proxies only — to confirm an approach before porting to JS.
+
+| Solution | Runs in browser? | Deployment | Size |
+|----------|-----------------|------------|------|
+| **ocrad.js** | ✅ currently in use | CDN script tag | ~300KB |
+| **Tesseract.js + letsgodigital tessdata** | ✅ direct port of Python result | `tesseract.js` npm + tessdata file | ~6MB WASM + ~1MB |
+| **onnxruntime-web + PaddleOCR ONNX** | ✅ viable | `onnxruntime-web` + ONNX files | ~24MB |
+| **7-segment template matching** | ✅ best fit | pure JS canvas math | **0 bytes** |
+| Transformers.js + SmolVLM | ⚠️ possible but slow | `@huggingface/transformers` | ~300–500MB |
+| Python tesseract / PaddleOCR / Florence-2 | ❌ server only — never ships | — | — |
+| Google ML Kit / Apple Vision | ❌ native app only | — | — |
+
 ### Current Status — Updated 2026-04-14
-**843 combinations run. Best score: `PARTIAL` (DIA only). No `SYS+DIA_MATCH` yet.**
+**843 combinations run. Best score: `PARTIAL` (DIA=78 exact). No `SYS+DIA_MATCH` yet.**
 
 | Metric | Value |
 |--------|-------|
@@ -23,17 +37,13 @@ Stack: vanilla JS, no build step. `app.js` is the entire app.
 | Images tested | 1 of 5 (`20260414_112450`) |
 | `FULL_MATCH` | 0 |
 | `SYS+DIA_MATCH` | 0 |
-| `PARTIAL` (one value close) | 21 |
-| `NO_MATCH` (values wrong) | 111 |
+| `PARTIAL` | 21 — DIA=78 exact via `tesseract_lcd_psm11 × contrast3_thr` |
+| `NO_MATCH` | 111 |
 | `NO_EXTRACT` | 471 |
-| `ENGINE_MISSING` (not installed) | 240 |
+| `ENGINE_MISSING` (PaddleOCR not installed) | 240 |
 
-**Engines NOT yet installed** (priority — these are the untested ones most likely to work):
-- ❌ PaddleOCR — `sudo pip3 install paddlepaddle paddleocr --break-system-packages`
-- ❌ Florence-2-base — `sudo pip3 install transformers timm --break-system-packages`
-- ❌ SmolVLM-256M — same as Florence-2
-
-**Engines installed and run:** tesseract_eng (5 modes), tesseract_lcd/letsgodigital (3 modes), tesseract_digits, ocrad (partial)
+**Engines run:** tesseract_eng (5 modes), tesseract_lcd/letsgodigital (3 modes), tesseract_digits, ocrad, florence2, smolvlm
+**Not run yet:** PaddleOCR (Python — maps to `onnxruntime-web` in browser)
 
 **Most promising PARTIAL result so far:**
 ```
@@ -223,11 +233,23 @@ tesseract_digits (psm8), ocrad, florence2, smolvlm
 2. **The leading "1" in SYS=118 is the only remaining blocker.** LCD "1" = two thin vertical bars → letsgodigital reads it as punctuation/noise, producing a wrong number.
 3. **VLM output parsing is broken** — `extract_bp()` uses digit regex. If Florence-2 returns "Systolic: 118" that text would match. Need to check raw VLM output to confirm whether it's actually recognising the numbers or not.
 
-### Next recommended steps (priority order)
-1. **Fix VLM output parsing** — check what Florence-2 and SmolVLM are actually outputting. If they say "118" in any format, update `extract_bp()` to parse natural-language VLM responses.
-2. **Install PaddleOCR** — not yet tested, highest-confidence untested engine.
-3. **Isolate SYS digits** — add strategy `sys_digits_only` crop (x:30–62%, y:18–42%) and run `tesseract_lcd_psm8` on it. Single-word mode on just the 3 SYS digits may get 118.
-4. **Try lower threshold on SYS crop** — the "1" segments may be lighter than the "8" segments. Try threshold=100 or 90 on the SYS-only crop.
+### Next recommended steps (priority order — browser-deployable only)
+
+**Remember: only solutions that run in a browser PWA are in scope.**
+
+1. **Isolate SYS digits and force PSM8** — the "1" in SYS=118 is being lost in a full-image pass.
+   Add strategy `sys_digits_only` (x:30–62%, y:18–42%) and run `tesseract_lcd_psm8` (single word).
+   This is browser-deployable via **Tesseract.js + letsgodigital tessdata**.
+
+2. **Port to Tesseract.js + letsgodigital** — Python confirms letsgodigital reads DIA correctly.
+   The browser port is: load `letsgodigital.traineddata` via Tesseract.js instead of `eng`.
+   Previous CORS issue was with the default worker config — use `createWorker` with blob URL (already fixed in app.js).
+
+3. **7-segment template matching (pure JS)** — zero download, deterministic, works offline always.
+   If letsgodigital still struggles with "1", template matching reads segment zones directly from canvas pixels.
+   See `scripts/ocr_bench.py` for the Python implementation to port.
+
+4. **PaddleOCR ONNX via onnxruntime-web** — test Python first to confirm it works, then export models to ONNX and load via `onnxruntime-web` in the browser. ~24MB download, WebGPU/WASM acceleration.
 
 ---
 
@@ -769,9 +791,9 @@ Complete catalogue of all engines to be tested, in priority order. Install comma
 |-----------|-------------|---------|--------|
 | `ocrad` | **GNU OCRAD** — same underlying engine as `ocrad.js` in the browser PWA. CLI result = browser result. | `sudo apt-get install -y ocrad` | ❌ not installed |
 
-#### Tier 4 — Native Mobile SDKs (cannot test in Python — for future app port)
+#### Tier 4 — Native Mobile SDKs (❌ NOT usable in PWA — native app only)
 
-These run entirely on-device, no cloud calls. Cannot be tested in the Python benchmark. Relevant if BPLog is ever ported to a native Android/iOS app.
+These run entirely on-device but require a native Android/iOS app build. **Cannot be used in a browser PWA.** Documented here for reference if BPLog is ever ported to a native app.
 
 | SDK | Platform | Description | Notes |
 |-----|----------|-------------|-------|
