@@ -325,3 +325,33 @@ Local `live-server` always showed `vdev` because `APP_VERSION = 'dev'` is a repo
 ```bash
 cd bp-app && npm run dev   # generates version.json, starts live-server on :8080
 ```
+
+---
+
+## EXIF / Image Datetime — 2026-04-14T16:xx (Claude Sonnet 4.6)
+
+### FRD Status
+EXIF datetime extraction **is in the FRD** — §4.2 Image Capture and §11 Tech Stack both specify `exifr` reading `DateTimeOriginal` as the entry timestamp with `Date.now()` fallback.
+
+### Gaps Found in Implementation
+
+| Gap | Severity | Details |
+|-----|----------|---------|
+| No timestamp UI on OCR review screen | High | Extracted datetime silently stored but never shown to user — cannot confirm, correct, or see which source was used |
+| Only `DateTimeOriginal` EXIF field tried | Medium | Many phones write `CreateDate`, `DateTime`, or `DateTimeDigitized` instead; single-field check leaves those readings timestamped as "now" |
+| Silent EXIF failure | Low | `catch (e) {}` swallowed all errors with no feedback |
+
+### Fix Applied (commit follows)
+- **OCR review screen** — added editable `<input type="datetime-local" id="ocr-timestamp" />` pre-filled from EXIF extraction
+- **Source label** — `(from photo EXIF)` or `(now — no EXIF)` shown beside the label so user knows where the time came from
+- **EXIF fallback chain** — now tries `DateTimeOriginal → CreateDate → DateTime → DateTimeDigitized` in order
+- **Save uses editable value** — `btn-ocr-save` reads the (possibly user-corrected) `ocr-timestamp` field rather than `state.pendingImage.timestamp`
+- **`toDatetimeLocal()` helper** — converts ISO string to `datetime-local` input format
+
+| Item | Status |
+|------|--------|
+| EXIF in FRD | ✅ Present (§4.2, §11) |
+| Timestamp shown to user | ✅ FIXED |
+| Multi-field EXIF fallback | ✅ FIXED |
+| Silent catch | ✅ FIXED (bare `catch {}`) |
+| User can edit timestamp before save | ✅ FIXED |

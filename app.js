@@ -365,10 +365,18 @@ async function loadFileIntoOCR(file) {
   const blob = file;
   const dataUrl = await blobToDataUrl(blob);
   let timestamp = new Date().toISOString();
+  let tsSource  = 'now (no EXIF)';
   try {
     const exif = await exifr.parse(blob);
-    if (exif && exif.DateTimeOriginal) timestamp = new Date(exif.DateTimeOriginal).toISOString();
-  } catch (e) {}
+    if (exif) {
+      // Try fields in priority order — different cameras/phones use different tags
+      const raw = exif.DateTimeOriginal || exif.CreateDate || exif.DateTime || exif.DateTimeDigitized;
+      if (raw) {
+        timestamp = new Date(raw).toISOString();
+        tsSource  = 'from photo EXIF';
+      }
+    }
+  } catch {}
   state.pendingImage = { blob, dataUrl, timestamp };
   state.pendingEntryId = uuid();
   document.getElementById('ocr-preview').src = dataUrl;
@@ -378,6 +386,9 @@ async function loadFileIntoOCR(file) {
   document.getElementById('ocr-note').value = '';
   document.getElementById('ocr-tags').innerHTML = '';
   document.getElementById('ocr-brand').value = '';
+  // Populate editable timestamp field
+  document.getElementById('ocr-timestamp').value = toDatetimeLocal(timestamp);
+  document.getElementById('ocr-ts-source').textContent = `(${tsSource})`;
   showScreen('ocr');
   const hint = document.getElementById('ocr-hint');
   hint.style.display = 'none';
@@ -404,6 +415,13 @@ async function loadFileIntoOCR(file) {
     hint.textContent = `OCR failed: ${e.message || 'unknown error'}. Enter values manually.`;
   }
   hideLoading();
+}
+
+function toDatetimeLocal(iso) {
+  // Convert ISO string to value suitable for <input type="datetime-local">
+  const d = new Date(iso);
+  const pad = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function blobToDataUrl(blob) {
@@ -523,7 +541,7 @@ document.getElementById('btn-ocr-save').addEventListener('click', async () => {
   const entry = {
     id: state.pendingEntryId,
     user_id: state.currentUserId,
-    timestamp: state.pendingImage?.timestamp || new Date().toISOString(),
+    timestamp: (() => { const v = document.getElementById('ocr-timestamp').value; return v ? new Date(v).toISOString() : (state.pendingImage?.timestamp || new Date().toISOString()); })(),
     systolic: sys, diastolic: dia, heart_rate: hr,
     pulse_pressure: pp, mean_arterial_pressure: map, bp_category: cat,
     note, tags: [...ocrTags], machine_brand: brand,
@@ -1194,6 +1212,96 @@ document.getElementById('btn-install-pwa').addEventListener('click', async () =>
   const { outcome } = await state.deferredInstall.userChoice;
   if (outcome === 'accepted') state.deferredInstall = null;
 });
+
+// =================== App Update / Rollback ===================
+let availableVersions = null;
+
+async function checkAppUpdate() {
+  const statusEl = document.getElementById('update-status');
+  const checkBtn = document.getElementById('btn-check-update');
+  const updateBtn = document.getElementById('btn-update-now');
+  const prevWrap = document.getElementById('previous-versions');
+  const listEl = document.getElementById('versions-list');
+
+  statusEl.textContent = 'Checking…';
+  checkBtn.style.display = 'none';
+  updateBtn.style.display = 'none';
+  prevWrap.style.display = 'none';
+  listEl.innerHTML = '';
+
+  try {
+    const res = await fetch('versions.json?t=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('versions.json not found');
+    availableVersions = await res.json();
+    const currentNum = parseFloat(APP_VERSION);
+    const latest = availableVersions.versions[0];
+    const latestNum = parseFloat(latest?.version || '0');
+
+    if (APP_VERSION === 'dev') {
+      statusEl.textContent = 'Development build — updates disabled.';
+      prevWrap.style.display = 'block';
+      renderVersionsList(availableVersions.versions, false);
+      return;
+    }
+
+    if (latestNum > currentNum) {
+      statusEl.textContent = `Update available: v${APP_VERSION} → v${latest.version}`;
+      updateBtn.style.display = 'block';
+      updateBtn.textContent = `Update to v${latest.version}`;
+      updateBtn.onclick = () => doAppUpdate();
+      prevWrap.style.display = 'block';
+      renderVersionsList(availableVersions.versions, true);
+    } else {
+      statusEl.textContent = `You are on the latest version (v${APP_VERSION}).`;
+      checkBtn.style.display = 'inline-flex';
+      checkBtn.textContent = 'Check Again';
+      prevWrap.style.display = 'block';
+      renderVersionsList(availableVersions.versions, true);
+    }
+  } catch (e) {
+    statusEl.textContent = 'Could not check for updates (offline or error).';
+    checkBtn.style.display = 'inline-flex';
+    checkBtn.textContent = 'Try Again';
+  }
+}
+
+function renderVersionsList(versions, includeCurrent) {
+  const listEl = document.getElementById('versions-list');
+  const currentNum = parseFloat(APP_VERSION);
+  listEl.innerHTML = versions.map(v => {
+    const vNum = parseFloat(v.version);
+    const isCurrent = v.version === APP_VERSION;
+    const isNewer = vNum > currentNum;
+    if (!includeCurrent && isCurrent) return '';
+    let badge = '';
+    if (isCurrent) badge = '<span class="badge badge-normal" style="margin-left:6px">Current</span>';
+    else if (isNewer) badge = '<span class="badge badge-elevated" style="margin-left:6px">Newer</span>';
+    else badge = '<span class="badge" style="margin-left:6px">Older</span>';
+    return `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div>
+          <strong>v${escapeHtml(v.version)}</strong> ${badge}
+          <div class="text-muted">${escapeHtml(v.date)} • ${escapeHtml(v.notes)}</div>
+        </div>
+        ${isCurrent ? '' : `<a class="btn btn-secondary" href="${v.path}" style="font-size:12px;padding:6px 10px">Open</a>`}
+      </div>
+    `;
+  }).join('');
+}
+
+async function doAppUpdate() {
+  if (!('serviceWorker' in navigator)) {
+    location.reload();
+    return;
+  }
+  const regs = await navigator.serviceWorker.getRegistrations();
+  for (const r of regs) await r.unregister();
+  const keys = await caches.keys();
+  for (const k of keys) await caches.delete(k);
+  location.href = './';
+}
+
+document.getElementById('btn-check-update').addEventListener('click', checkAppUpdate);
 
 // =================== Modal / Loading ===================
 function showModal(message, onConfirm) {
