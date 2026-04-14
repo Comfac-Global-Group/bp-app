@@ -299,4 +299,29 @@ Replaced `sed`-based injection entirely with a **Python string replacement** app
 | `sed` replaced with Python `str.replace()` | ✅ |
 | `sw.js` `CACHE_NAME` now CI-injected | ✅ |
 | Unique `/* CI_INJECT_* */` marker comments in source | ✅ |
-| Live site version badge correct | ⏳ PENDING — awaiting Actions run |
+| Live site version badge correct | ✅ CONFIRMED — Actions run `24389644336` injected `APP_VERSION=1.11 BUILD_SHA=bac0c0a` successfully |
+| Local dev showing version | ✅ FIXED — `version.json` + `npm run dev` (see below) |
+
+---
+
+## Local Dev Version Display (2026-04-14 — Claude Sonnet 4.6)
+
+### Problem
+Local `live-server` always showed `vdev` because `APP_VERSION = 'dev'` is a repo constant — CI injection only runs on GitHub Actions, never locally.
+
+### Fix
+- `scripts/dev-version.mjs` — reads `git rev-list --count HEAD` + `git rev-parse --short HEAD`, writes `version.json` with `{ version, sha, date }`
+- `package.json` — `npm run dev` runs the script then starts `live-server`
+- `app.js checkVersion()` — fetches `./version.json` first; if present uses those values; falls back to CI-injected `APP_VERSION`/`BUILD_SHA` constants
+- `version.json` added to `.gitignore` — never committed; generated on demand
+
+### How version monitoring now works
+| Context | Version source | SHA comparison |
+|---------|---------------|----------------|
+| Local `npm run dev` | `version.json` from local git | local HEAD SHA vs GitHub API latest |
+| Deployed (GitHub Pages) | CI-injected `APP_VERSION` constant | CI SHA vs GitHub API latest |
+
+### Usage
+```bash
+cd bp-app && npm run dev   # generates version.json, starts live-server on :8080
+```

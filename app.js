@@ -90,26 +90,36 @@ function badgeClass(cat) {
 // =================== Version Check ===================
 async function checkVersion() {
   const badge = document.getElementById('version-badge');
-  if (APP_VERSION === 'dev') {
-    badge.textContent = 'vdev';
-    badge.title = 'Development build';
-  } else {
-    badge.textContent = `v${APP_VERSION}`;
-  }
+
+  // Prefer version.json (generated locally by `npm run dev`) over CI-injected constants
+  let localVersion = APP_VERSION;
+  let localSha     = BUILD_SHA;
+  try {
+    const vRes = await fetch('./version.json', { cache: 'no-store' });
+    if (vRes.ok) {
+      const v = await vRes.json();
+      if (v.version) localVersion = v.version;
+      if (v.sha)     localSha     = v.sha;
+    }
+  } catch {}
+
+  badge.textContent = `v${localVersion}`;
+  badge.title = `Build ${localSha}`;
+
   try {
     const res = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits/main`, { method: 'GET', cache: 'no-store' });
     if (!res.ok) throw new Error('fetch failed');
     const data = await res.json();
     const remote = (data.sha || '').substring(0, 7);
-    if (BUILD_SHA !== 'dev' && remote && remote !== BUILD_SHA) {
+    if (remote && remote !== localSha) {
       badge.classList.add('update');
       badge.title = `Update available • Latest: ${remote}`;
-    } else if (BUILD_SHA !== 'dev') {
+    } else {
       badge.classList.add('ok');
-      badge.title = `Up to date • Build ${BUILD_DATE}`;
+      badge.title = `Up to date • Build ${localSha}`;
     }
-  } catch (e) {
-    badge.title = 'Offline or rate-limited';
+  } catch {
+    badge.title = `Offline or rate-limited • ${localSha}`;
   }
 }
 

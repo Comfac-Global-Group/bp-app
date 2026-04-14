@@ -1,0 +1,9 @@
+{
+  "name": "bp-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev-version.mjs && npx live-server --port=8080",
+    "version-inject": "node scripts/dev-version.mjs"
+  }
+}
