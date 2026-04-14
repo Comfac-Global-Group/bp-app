@@ -1,5 +1,5 @@
 # BP-FRD — BPLog Functional Requirements Document
-**Version:** 1.1 | **Status:** Ready for Build | **Domain:** bp.comfac-it.com
+**Version:** 1.2 | **Status:** Ready for Build | **Domain:** bp.comfac-it.com
 **Author:** Justin / CGG R&D | **Date:** 2026-04-14
 
 ---
@@ -23,8 +23,11 @@ BPLog is a self-hosted Progressive Web App (PWA) for capturing and logging blood
 - JSON-based import/export per user
 - Free-text notes and user-defined tags per entry, editable at any time
 - Printable/exportable medical-grade report with time-series charts
+- **Automated version tracking** against GitHub `main` to confirm deployed build sync
+- **Night / dark theme** option for low-light usage
+- **Clear landing instructions** for saving to home screen and understanding local-only storage
 
-### Non-Goals (v1.1)
+### Non-Goals (v1.2)
 - Cloud sync or remote backend
 - Medical advice, diagnosis, clinical decision support
 - Automated medication reminders
@@ -35,9 +38,10 @@ BPLog is a self-hosted Progressive Web App (PWA) for capturing and logging blood
 ## 3. User Profiles
 
 ### 3.1 User Selector
-- Shown on app load: avatar card row with name + color
+- **Header dropdown:** the currently selected user is shown as the default; tapping opens a dropdown to switch to any other user.
 - Selected user persists in `localStorage`
-- Always accessible from nav bar
+- Always accessible from the sticky header on every screen
+- User add/rename/delete remains available on the Home screen
 
 ### 3.2 User Schema
 ```json
@@ -62,6 +66,9 @@ BPLog is a self-hosted Progressive Web App (PWA) for capturing and logging blood
 ## 4. Core Workflow
 
 ### 4.1 Home Screen
+- **Landing instruction card:**
+  - "To use BPLog like an app, open your browser menu and choose **Add to Home Screen** (or **Install**)."
+  - "This site does not save your settings — only your device does. All data stays on this device."
 - **"Take Photo"** — `<input type="file" accept="image/*" capture="environment">`
 - **"Upload Photo"** — file picker, supports multi-file select
 - Recent entries list (last 5): thumbnail, date/time, sys/dia/HR badge, tag chips, note preview (60 chars)
@@ -146,6 +153,9 @@ Infinite scroll, newest first. Each row:
 - Note preview — 60 chars, "read more" expands inline
 
 Tap row → expand: full image, all fields, complete note, all tags, edit/delete buttons.
+
+**Log header banner:**
+- Displays the **currently selected user name** and the **active date range** (or "All time" if no filter).
 
 ### 6.2 Filters
 - Date range (start/end date pickers)
@@ -260,7 +270,7 @@ Tag           Readings  Avg Sys  Avg Dia  Avg HR  Avg PP  Avg MAP
 meds               12     128       82       71      46      97
 maintenance         8     135       85       74      50     101
 morning            20     122       79       68      43      96
-after-walk          5     118       76       82      42      89
+after-walk          5     118       76       82      42     89
 ```
 
 #### Page 4+ — Full Reading Log Table
@@ -294,6 +304,8 @@ If "Include images" is on: thumbnails appended per row or on a following page gr
 | Offline | All features work offline: OCR, charting, PDF, log CRUD |
 | Mobile-first | 360–430px viewport; all touch targets min 44×44px |
 | HTTPS | Required for `getUserMedia` + PWA install; NPM + Let's Encrypt on PC03 |
+| **Night Theme** | Toggle in Settings; persists in `localStorage`; CSS variables switch via `[data-theme="dark"]` |
+| **Shortcut** | If the OS supports it, the installed PWA may offer shortcut actions (camera, logs) via manifest `shortcuts` |
 
 ---
 
@@ -320,14 +332,14 @@ If "Include images" is on: thumbnails appended per row or on a following page gr
 | Screen | Key Elements |
 |--------|-------------|
 | User Select | Avatar card row, add/rename/delete user |
-| Home / Capture | Take Photo, Upload Photo, recent 5 entries with tags + note preview |
+| Home / Capture | Landing instruction card, Take Photo, Upload Photo, recent 5 entries with tags + note preview |
 | OCR Preview | Image preview, editable sys/dia/HR fields, note input, tag input, machine brand, save |
-| Log List | Infinite scroll, filter bar (date + tag chips + category), inline note/tag edit on tap |
+| Log List | **User + date-range header**, infinite scroll, filter bar (date + tag chips + category), inline note/tag edit on tap |
 | Entry Detail | Full image, all fields, complete note, all tags, edit and delete |
 | Reports | Date range + tag filter config, interactive Chart.js charts, tag analytics table, Generate PDF |
 | Image Manager | Storage gauge, image list with size + entry link, bulk delete, delete orphans |
 | Export / Import | Per-user export buttons (JSON / ZIP / Combined / PDF), import picker + conflict strategy |
-| Settings | User profile (name, DOB, physician), Install PWA, storage info, app version |
+| Settings | User profile (name, DOB, physician), **Dark mode toggle**, **Version badge**, Install PWA, storage info |
 
 ---
 
@@ -354,27 +366,66 @@ Recommended sequencing for incremental build and testing:
 
 1. **PWA shell** — `manifest.json`, `sw.js`, IndexedDB schema (`idb`), user profile CRUD
 2. **Capture flow** — camera input, EXIF extraction, Tesseract.js OCR, note/tag input, save entry
-3. **Log list** — infinite scroll, filter bar, inline note/tag editing, BP category badges
+3. **Log list** — infinite scroll, filter bar, inline note/tag editing, BP category badges, user/date header
 4. **Reports screen** — interactive Chart.js charts, tag analytics table, date/tag filter wiring
 5. **PDF generator** — jsPDF report assembly: cover → stats → charts → tag table → log AutoTable
 6. **Export / Import** — JSON export/import, JSZip image archive, conflict resolution UI
 7. **Image Manager** — storage gauge, bulk delete, orphan cleanup
-8. **Settings + PWA polish** — install prompt, user profile edit, offline testing
+8. **Settings + PWA polish** — install prompt, user profile edit, **dark mode**, **version badge**, offline indicator, landing instructions, disclaimer, offline testing
 
 ---
 
-## 15. Out of Scope — v2 Candidates
+## 15. Version Tracking
+
+### 15.1 Automated Version Badge
+- A version badge is displayed in the **top-right corner** of the app (inside the sticky header).
+- The badge shows:
+  - **Local build SHA** (short hash, hardcoded in `app.js` at build time)
+  - **Sync status** — on load, the app fetches the latest commit SHA from the GitHub API (`repos/Comfac-Global-Group/bp-app/commits/main`)
+  - If local SHA matches remote → **"Up to date"** (green)
+  - If mismatch or fetch fails → **"Update available"** (amber)
+- This allows users and testers to instantly verify whether the live site has received the latest pushed changes.
+
+---
+
+## 16. Offline / Local Status
+
+### 16.1 Status Indicator
+- A small **"Local / Offline"** pill appears in the header whenever `navigator.onLine === false`.
+- When online, the indicator is hidden (the app functions identically either way).
+- Reinforces the privacy promise: the app works fully without a connection.
+
+---
+
+## 17. Landing Instructions & Disclaimer
+
+### 17.1 Home Screen Instruction Card
+- A dismissible card on the Home screen explains:
+  - "To use BPLog like an app, open your browser menu and choose **Add to Home Screen** (or **Install**)."
+  - "This site will not save your settings — only your device will. All data stays on this device."
+- This sets expectations for first-time visitors using the web version.
+
+### 17.2 Medical Disclaimer
+- A disclaimer modal is shown **once per device** on first load (tracked via `localStorage`).
+- Text:
+  > **This is not a medical app.** BPLog is a personal logging tool. It does not provide diagnosis, medical advice, or clinical decision support. Always consult a qualified healthcare professional for medical concerns.
+- The disclaimer must be acknowledged before interacting with the app.
+- A shorter version of the disclaimer is also shown in the footer of Settings and the README.
+
+---
+
+## 18. Out of Scope — v2 Candidates
 
 | Feature | Notes |
 |---------|-------|
 | AI trend interpretation | Could use local Ollama API — no data leaves device |
 | Nextcloud WebDAV sync | CGG holds Bronze partner status; feasible via WebDAV PUT |
 | Bluetooth BP monitor | Web Bluetooth API; bypasses camera/OCR for supported devices |
-| Medication module | Tags serve as proxy in v1.1; full med log in v2 |
+| Medication module | Tags serve as proxy in v1.2; full med log in v2 |
 | Reminders / alarms | Web Push + Service Worker; HTTPS already covered |
 | Physician portal | Shared read-only report URL; needs minimal backend |
 | PDF → Nextcloud auto-upload | Post-generation "Save to Nextcloud" via WebDAV PUT |
 
 ---
 
-*End of document — BPLog FRD v1.1*
+*End of document — BPLog FRD v1.2*

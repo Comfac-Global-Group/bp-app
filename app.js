@@ -1,6 +1,12 @@
 /* BPLog — app.js */
 'use strict';
 
+// =================== Build Info ===================
+const LOCAL_SHA = '83a8a29';
+const BUILD_DATE = '2026-04-14';
+const REPO_OWNER = 'Comfac-Global-Group';
+const REPO_NAME = 'bp-app';
+
 // =================== State ===================
 const state = {
   currentUserId: localStorage.getItem('bplog_current_user') || null,
@@ -16,6 +22,13 @@ const state = {
 };
 
 const PALETTE = ['#0d7377','#14a085','#2ecc71','#3498db','#9b59b6','#e74c3c','#f39c12','#1abc9c'];
+
+// =================== Theme ===================
+function applyTheme() {
+  const theme = localStorage.getItem('bplog_theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  document.documentElement.setAttribute('data-theme', theme);
+}
+applyTheme();
 
 // =================== IndexedDB ===================
 let db;
@@ -67,6 +80,39 @@ function badgeClass(cat) {
   return 'badge-' + cat.toLowerCase().replace(/\s+/g,'');
 }
 
+// =================== Version Check ===================
+async function checkVersion() {
+  const badge = document.getElementById('version-badge');
+  badge.textContent = `v${LOCAL_SHA}`;
+  try {
+    const res = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits/main`, { method: 'GET', cache: 'no-store' });
+    if (!res.ok) throw new Error('fetch failed');
+    const data = await res.json();
+    const remote = (data.sha || '').substring(0, 7);
+    if (remote && remote !== LOCAL_SHA) {
+      badge.textContent = `Update available (${LOCAL_SHA})`;
+      badge.classList.add('update');
+      badge.title = `Latest: ${remote}`;
+    } else {
+      badge.textContent = `Up to date (${LOCAL_SHA})`;
+      badge.classList.add('ok');
+      badge.title = `Build ${BUILD_DATE}`;
+    }
+  } catch (e) {
+    badge.textContent = `v${LOCAL_SHA}`;
+    badge.title = 'Offline or rate-limited';
+  }
+}
+
+// =================== Online Status ===================
+function updateOnlineStatus() {
+  const el = document.getElementById('offline-badge');
+  if (!navigator.onLine) el.classList.add('active');
+  else el.classList.remove('active');
+}
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+
 // =================== Users ===================
 async function loadUsers() {
   state.users = await db.getAll('users');
@@ -100,7 +146,6 @@ async function renameUser(id, name) {
 async function deleteUser(id) {
   const u = state.users.find(x => x.id === id);
   if (!u) return;
-  // delete entries and images
   const entries = await db.getAllFromIndex('entries', 'user_id', id);
   const tx = db.transaction(['entries','images','tags','users'], 'readwrite');
   for (const e of entries) {
@@ -120,6 +165,30 @@ async function deleteUser(id) {
 }
 
 function renderUsers() {
+  // Header dropdown
+  const select = document.getElementById('header-user-select');
+  select.innerHTML = '';
+  if (state.users.length > 1) {
+    select.style.display = 'inline-block';
+    state.users.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u.id;
+      opt.textContent = u.name;
+      if (u.id === state.currentUserId) opt.selected = true;
+      select.appendChild(opt);
+    });
+  } else if (state.users.length === 1) {
+    select.style.display = 'inline-block';
+    const opt = document.createElement('option');
+    opt.value = state.users[0].id;
+    opt.textContent = state.users[0].name;
+    opt.selected = true;
+    select.appendChild(opt);
+  } else {
+    select.style.display = 'none';
+  }
+
+  // Home screen chips
   const container = document.getElementById('home-user-list');
   container.innerHTML = '';
   state.users.forEach(u => {
@@ -141,12 +210,8 @@ function renderUsers() {
     });
     const nameEl = el.querySelector('.user-name');
     if (nameEl) {
-      nameEl.addEventListener('blur', (e) => {
-        renameUser(u.id, e.target.innerText);
-      });
-      nameEl.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); }
-      });
+      nameEl.addEventListener('blur', (e) => renameUser(u.id, e.target.innerText));
+      nameEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.target.blur(); } });
     }
     const delBtn = el.querySelector('.btn-delete-user');
     if (delBtn) {
@@ -158,6 +223,13 @@ function renderUsers() {
     container.appendChild(el);
   });
 }
+
+document.getElementById('header-user-select').addEventListener('change', (e) => {
+  state.currentUserId = e.target.value;
+  localStorage.setItem('bplog_current_user', state.currentUserId);
+  renderUsers();
+  loadData();
+});
 
 // =================== Navigation ===================
 function showScreen(id) {
@@ -219,17 +291,40 @@ function entryRowHTML(e) {
   `;
 }
 
-async function loadThumbnails() {
-  for (const e of state.entries.slice(0,5)) {
+async function loadLogThumbnails(list) {
+  for (const e of list) {
     if (!e.image_ref) continue;
     const img = document.getElementById('thumb-' + e.id);
     if (!img) continue;
     const blob = await db.get('images', e.id);
-    if (blob && blob.data) {
-      const url = URL.createObjectURL(blob.data);
-      img.src = url;
-    }
+    if (blob && blob.data) img.src = URL.createObjectURL(blob.data);
   }
+}
+
+// =================== Landing Card ===================
+function initLandingCard() {
+  const card = document.getElementById('landing-card');
+  if (localStorage.getItem('bplog_dismissed_landing') === '1') {
+    card.style.display = 'none';
+  } else {
+    card.style.display = 'block';
+  }
+  document.getElementById('btn-dismiss-landing').addEventListener('click', () => {
+    localStorage.setItem('bplog_dismissed_landing', '1');
+    card.style.display = 'none';
+  });
+}
+
+// =================== Disclaimer ===================
+function initDisclaimer() {
+  const overlay = document.getElementById('disclaimer-overlay');
+  if (localStorage.getItem('bplog_disclaimer_seen') !== '1') {
+    overlay.classList.add('active');
+  }
+  document.getElementById('btn-accept-disclaimer').addEventListener('click', () => {
+    localStorage.setItem('bplog_disclaimer_seen', '1');
+    overlay.classList.remove('active');
+  });
 }
 
 // =================== Capture flow ===================
@@ -242,7 +337,6 @@ document.getElementById('input-gallery').addEventListener('change', handleFiles)
 async function handleFiles(ev) {
   const files = Array.from(ev.target.files);
   if (!files.length) return;
-  // Process first file only for simplicity
   const file = files[0];
   const blob = file;
   const dataUrl = await blobToDataUrl(blob);
@@ -285,17 +379,14 @@ function blobToDataUrl(blob) {
 }
 
 async function runOCR(dataUrl) {
-  // Preprocess: draw to canvas, grayscale + contrast
   const canvas = await preprocessImage(dataUrl);
   const result = await Tesseract.recognize(canvas.toDataURL('image/png'), 'eng', {
     logger: m => { if (m.status === 'recognizing text') updateLoadingText(`OCR ${Math.round(m.progress*100)}%`); }
   });
   const text = result.data.text;
-  // Parse three numeric groups
   const nums = text.match(/\b\d{2,3}\b/g) || [];
   const brand = detectBrand(text);
   if (nums.length >= 3) {
-    // Heuristic: largest is likely systolic, next diastolic, then hr
     const n = nums.map(Number).sort((a,b) => b-a);
     return { sys: n[0], dia: n[1], hr: n[2], brand };
   }
@@ -325,7 +416,6 @@ async function preprocessImage(dataUrl) {
   const d = idata.data;
   for (let i = 0; i < d.length; i += 4) {
     const gray = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
-    // contrast
     const c = ((gray - 128) * 1.4) + 128;
     const v = Math.max(0, Math.min(255, c));
     d[i] = d[i+1] = d[i+2] = v;
@@ -395,7 +485,6 @@ document.getElementById('btn-ocr-save').addEventListener('click', async () => {
   if (state.pendingImage) {
     await db.put('images', { entry_id: state.pendingEntryId, data: state.pendingImage.blob });
   }
-  // Save tags registry
   const existing = await db.get('tags', state.currentUserId);
   const merged = new Set([...(existing?.tags||[]), ...ocrTags]);
   await db.put('tags', { user_id: state.currentUserId, tags: Array.from(merged) });
@@ -450,6 +539,14 @@ function renderLogs() {
   if (logFilterTags.length) list = list.filter(e => logFilterTags.every(t => (e.tags||[]).includes(t)));
   list.sort((a,b) => logSort==='newest' ? new Date(b.timestamp)-new Date(a.timestamp) : new Date(a.timestamp)-new Date(b.timestamp));
 
+  // Update log header
+  const user = state.users.find(u => u.id === state.currentUserId);
+  document.getElementById('log-user-name').textContent = user ? user.name : 'User';
+  const rangeText = (logFilterStart || logFilterEnd)
+    ? `${logFilterStart || 'Start'} → ${logFilterEnd || 'End'}`
+    : 'All time';
+  document.getElementById('log-date-range').textContent = rangeText;
+
   const container = document.getElementById('log-entries');
   document.getElementById('log-empty').style.display = list.length ? 'none' : 'block';
   if (!list.length) { container.innerHTML = ''; return; }
@@ -459,16 +556,6 @@ function renderLogs() {
     row.addEventListener('click', () => showDetail(e.id));
   });
   loadLogThumbnails(list);
-}
-
-async function loadLogThumbnails(list) {
-  for (const e of list) {
-    if (!e.image_ref) continue;
-    const img = document.getElementById('thumb-' + e.id);
-    if (!img) continue;
-    const blob = await db.get('images', e.id);
-    if (blob && blob.data) img.src = URL.createObjectURL(blob.data);
-  }
 }
 
 // =================== Detail ===================
@@ -566,11 +653,12 @@ function showDetail(id) {
 
 // =================== Reports ===================
 function renderReports() {
-  // Default date range: last 30 days
   const end = new Date();
   const start = new Date(); start.setDate(end.getDate() - 30);
   document.getElementById('report-start').value = fmtDateInput(start);
   document.getElementById('report-end').value = fmtDateInput(end);
+  const user = state.users.find(u => u.id === state.currentUserId);
+  document.getElementById('report-user-name').textContent = user ? `• ${user.name}` : '';
   updateReport();
 }
 
@@ -653,10 +741,28 @@ function updateReport() {
   renderTagAnalytics(list);
 }
 
+function getChartColors() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  return {
+    grid: isDark ? '#30363d' : '#e5e7eb',
+    ticks: isDark ? '#c9d1d9' : '#374151',
+    legend: isDark ? '#c9d1d9' : '#111827'
+  };
+}
+
 function renderCharts(list) {
   const labels = list.map(x => fmtDate(x.timestamp));
   const destroy = id => { if (state.charts[id]) { state.charts[id].destroy(); state.charts[id]=null; } };
   destroy('sysdia'); destroy('hr'); destroy('ppmap');
+  const c = getChartColors();
+  const commonOptions = {
+    responsive: true,
+    plugins: { legend: { labels: { color: c.legend } } },
+    scales: {
+      x: { grid: { color: c.grid }, ticks: { color: c.ticks } },
+      y: { grid: { color: c.grid }, ticks: { color: c.ticks } }
+    }
+  };
 
   state.charts.sysdia = new Chart(document.getElementById('chart-sysdia'), {
     type: 'line',
@@ -668,9 +774,9 @@ function renderCharts(list) {
       ]
     },
     options: {
-      responsive: true,
-      plugins: { title: { display: true, text: 'Systolic & Diastolic' } },
-      scales: { y: { min: 40, max: 200 } }
+      ...commonOptions,
+      plugins: { title: { display: true, text: 'Systolic & Diastolic', color: c.legend }, legend: { labels: { color: c.legend } } },
+      scales: { ...commonOptions.scales, y: { ...commonOptions.scales.y, min: 40, max: 200 } }
     }
   });
 
@@ -678,9 +784,9 @@ function renderCharts(list) {
     type: 'line',
     data: { labels, datasets: [{ label: 'Heart Rate', data: list.map(x=>x.heart_rate), borderColor: '#27ae60', backgroundColor: '#27ae60', tension: 0.2, pointRadius: 3 }] },
     options: {
-      responsive: true,
-      plugins: { title: { display: true, text: 'Heart Rate' } },
-      scales: { y: { min: 40, max: 140 } }
+      ...commonOptions,
+      plugins: { title: { display: true, text: 'Heart Rate', color: c.legend }, legend: { labels: { color: c.legend } } },
+      scales: { ...commonOptions.scales, y: { ...commonOptions.scales.y, min: 40, max: 140 } }
     }
   });
 
@@ -694,21 +800,16 @@ function renderCharts(list) {
       ]
     },
     options: {
-      responsive: true,
-      plugins: { title: { display: true, text: 'Pulse Pressure & MAP' } },
-      scales: { y: { min: 20, max: 160 } }
+      ...commonOptions,
+      plugins: { title: { display: true, text: 'Pulse Pressure & MAP', color: c.legend }, legend: { labels: { color: c.legend } } },
+      scales: { ...commonOptions.scales, y: { ...commonOptions.scales.y, min: 20, max: 160 } }
     }
   });
 }
 
 function renderTagAnalytics(list) {
   const counts = {};
-  list.forEach(e => {
-    (e.tags || []).forEach(t => {
-      if (!counts[t]) counts[t] = [];
-      counts[t].push(e);
-    });
-  });
+  list.forEach(e => { (e.tags || []).forEach(t => { if (!counts[t]) counts[t]=[]; counts[t].push(e); }); });
   const rows = Object.keys(counts).sort().map(t => {
     const items = counts[t];
     return `
@@ -739,7 +840,6 @@ async function generatePDF() {
   const user = state.users.find(u => u.id === state.currentUserId);
   const start = document.getElementById('report-start').value;
   const end = document.getElementById('report-end').value;
-  const includeImages = document.getElementById('report-include-images').checked;
 
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF();
@@ -756,8 +856,10 @@ async function generatePDF() {
   doc.text(`Generated: ${new Date().toLocaleString()}`, 14, y); y += 6;
   doc.text(`Total Readings: ${list.length}`, 14, y); y += 10;
 
-  // Stats table
-  const sys = list.map(x=>x.systolic), dia = list.map(x=>x.diastolic), hr = list.map(x=>x.heart_rate);
+  const sys = list.map(x=>x.systolic);
+  const dia = list.map(x=>x.diastolic);
+  const hr = list.map(x=>x.heart_rate);
+
   doc.setFontSize(12);
   doc.text('Summary Statistics', 14, y); y += 6;
   doc.autoTable({
@@ -775,7 +877,6 @@ async function generatePDF() {
   });
   y = doc.lastAutoTable.finalY + 8;
 
-  // Category distribution
   doc.text('BP Category Distribution', 14, y); y += 6;
   ['Normal','Elevated','Stage 1','Stage 2','Crisis'].forEach(c => {
     const n = list.filter(x=>x.bp_category===c).length;
@@ -786,7 +887,6 @@ async function generatePDF() {
   doc.text(`Avg Pulse Pressure: ${avg(list.map(x=>x.pulse_pressure))} mmHg`, 14, y); y += 5;
   doc.text(`Avg MAP: ${avg(list.map(x=>x.mean_arterial_pressure))} mmHg`, 14, y); y += 10;
 
-  // Charts
   async function addChartImage(canvasId, title) {
     if (y > 240) { doc.addPage(); y = 14; }
     doc.setFontSize(12); doc.text(title, 14, y); y += 4;
@@ -802,7 +902,6 @@ async function generatePDF() {
   await addChartImage('chart-hr', 'Heart Rate');
   await addChartImage('chart-ppmap', 'Pulse Pressure & MAP');
 
-  // Tag analytics table
   const counts = {};
   list.forEach(e => { (e.tags||[]).forEach(t => { if (!counts[t]) counts[t]=[]; counts[t].push(e); }); });
   if (Object.keys(counts).length) {
@@ -823,7 +922,6 @@ async function generatePDF() {
     y = doc.lastAutoTable.finalY + 8;
   }
 
-  // Full log table
   if (y > 180) { doc.addPage(); y = 14; }
   doc.setFontSize(12); doc.text('Full Reading Log', 14, y); y += 6;
   doc.autoTable({
@@ -866,9 +964,7 @@ async function exportImageZip() {
   const imgs = await db.getAll('images');
   const mine = state.entries.map(e => e.id);
   for (const img of imgs) {
-    if (mine.includes(img.entry_id) && img.data) {
-      zip.file(`${img.entry_id}.jpg`, img.data);
-    }
+    if (mine.includes(img.entry_id) && img.data) zip.file(`${img.entry_id}.jpg`, img.data);
   }
   const blob = await zip.generateAsync({ type: 'blob' });
   downloadBlob(blob, `bplog-images-${state.currentUserId}.zip`);
@@ -961,7 +1057,6 @@ async function renderImages() {
   const container = document.getElementById('image-list');
   container.innerHTML = '';
 
-  // Storage estimate
   if (navigator.storage && navigator.storage.estimate) {
     navigator.storage.estimate().then(est => {
       const used = est.usage ? Math.round(est.usage / 1048576) : 0;
@@ -1016,6 +1111,8 @@ async function loadSettings() {
   document.getElementById('setting-name').value = u?.name || '';
   document.getElementById('setting-dob').value = u?.date_of_birth || '';
   document.getElementById('setting-physician').value = u?.physician_name || '';
+  document.getElementById('settings-build-sha').textContent = LOCAL_SHA;
+  document.getElementById('setting-dark-mode').checked = (localStorage.getItem('bplog_theme') === 'dark');
 }
 
 document.getElementById('btn-save-profile').addEventListener('click', async () => {
@@ -1027,6 +1124,16 @@ document.getElementById('btn-save-profile').addEventListener('click', async () =
   await db.put('users', u);
   renderUsers();
   alert('Profile saved');
+});
+
+document.getElementById('setting-dark-mode').addEventListener('change', (e) => {
+  const theme = e.target.checked ? 'dark' : 'light';
+  localStorage.setItem('bplog_theme', theme);
+  document.documentElement.setAttribute('data-theme', theme);
+  // Re-render charts if on reports screen to match theme
+  if (document.getElementById('screen-reports').classList.contains('active')) {
+    updateReport();
+  }
 });
 
 document.getElementById('btn-install-pwa').addEventListener('click', async () => {
@@ -1095,4 +1202,8 @@ if ('serviceWorker' in navigator) {
   await initDB();
   await loadUsers();
   if (state.currentUserId) await loadData();
+  updateOnlineStatus();
+  checkVersion();
+  initLandingCard();
+  initDisclaimer();
 })();

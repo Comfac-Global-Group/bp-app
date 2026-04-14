@@ -19,7 +19,14 @@
 <body>
   <div id="app">
     <header>
-      <div class="title">🩺 BPLog</div>
+      <div class="left">
+        <div class="title">🩺 BPLog</div>
+        <select id="header-user-select" class="user-dropdown" style="display:none"></select>
+      </div>
+      <div class="header-meta">
+        <span class="offline-badge" id="offline-badge">Local / Offline</span>
+        <span class="version-badge" id="version-badge" title="Checking version…">v…</span>
+      </div>
       <div class="nav">
         <button class="nav-btn active" data-screen="home">Home</button>
         <button class="nav-btn" data-screen="logs">Logs</button>
@@ -32,8 +39,15 @@
     <main>
       <!-- Home / Capture -->
       <section id="screen-home" class="screen active">
+        <div id="landing-card" class="landing-card" style="display:none">
+          <h3>📲 Add BPLog to Your Home Screen</h3>
+          <p>To use BPLog like a native app, open your <strong>browser menu</strong> and choose <strong>Add to Home Screen</strong> (or <strong>Install</strong>).</p>
+          <p class="text-muted">This site will not save your settings — only your device will. All data stays on this device.</p>
+          <button class="btn btn-secondary" id="btn-dismiss-landing">Got it</button>
+        </div>
+
         <div class="card">
-          <div class="card-title">Select User</div>
+          <div class="card-title">Users</div>
           <div class="user-list" id="home-user-list"></div>
           <div class="flex gap-2 mt-2">
             <input type="text" id="new-user-name" placeholder="New user name" />
@@ -107,6 +121,10 @@
 
       <!-- Logs -->
       <section id="screen-logs" class="screen">
+        <div class="log-header" id="log-header">
+          <strong id="log-user-name">User</strong>
+          <span id="log-date-range">All time</span>
+        </div>
         <div class="card">
           <div class="card-title">Filters</div>
           <div class="filter-bar">
@@ -139,7 +157,7 @@
       <!-- Reports -->
       <section id="screen-reports" class="screen">
         <div class="card">
-          <div class="card-title">Report Options</div>
+          <div class="card-title">Report Options <span class="text-muted" id="report-user-name"></span></div>
           <div class="filter-bar">
             <input type="date" id="report-start" />
             <input type="date" id="report-end" />
@@ -228,10 +246,24 @@
         </div>
 
         <div class="card">
+          <div class="card-title">Appearance</div>
+          <label class="flex gap-2" style="align-items:center;">
+            <input type="checkbox" id="setting-dark-mode" />
+            <span>Dark mode</span>
+          </label>
+        </div>
+
+        <div class="card">
           <div class="card-title">App</div>
           <button class="btn btn-outline btn-block" id="btn-install-pwa">Add to Home Screen</button>
           <button class="btn btn-outline btn-block mt-2" id="btn-go-export">Export / Import</button>
-          <div class="text-muted mt-2">Version 1.1 • BPLog</div>
+          <div class="text-muted mt-2">Version 1.2 • BPLog</div>
+          <div class="text-muted">Build: <span id="settings-build-sha">—</span></div>
+        </div>
+
+        <div class="card" style="border-left:4px solid var(--danger)">
+          <div class="card-title">Disclaimer</div>
+          <p class="text-muted">This is not a medical app. BPLog is a personal logging tool. It does not provide diagnosis, medical advice, or clinical decision support. Always consult a qualified healthcare professional for medical concerns.</p>
         </div>
       </section>
     </main>
@@ -254,6 +286,22 @@
     <div class="modal" style="text-align:center">
       <div class="card-title">Processing…</div>
       <p class="text-muted" id="loading-text">Please wait</p>
+    </div>
+  </div>
+
+  <!-- Modal: disclaimer (first load) -->
+  <div class="overlay" id="disclaimer-overlay">
+    <div class="modal">
+      <div class="card-title">Disclaimer</div>
+      <p class="disclaimer-text">
+        <strong>This is not a medical app.</strong><br><br>
+        BPLog is a personal logging tool. It does not provide diagnosis, medical advice, or clinical decision support.
+        All data is stored locally on your device. This site will not save your settings — only your device will.<br><br>
+        Always consult a qualified healthcare professional for medical concerns.
+      </p>
+      <div class="flex gap-2 mt-3">
+        <button class="btn btn-primary btn-block" id="btn-accept-disclaimer">I Understand</button>
+      </div>
     </div>
   </div>
 
