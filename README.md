@@ -35,6 +35,23 @@ Tracking blood pressure should be as simple as taking a photo. Existing solution
 
 ---
 
+## Browser Notes
+
+### Chrome / Edge (Desktop & Android)
+Full PWA support — install via the address bar install button or browser menu. Updates are handled automatically via the in-app **Settings → App Update** card.
+
+### Firefox (Desktop & Android)
+Firefox does not support background PWA updates. To update to a new version:
+1. Open **Settings** in the app.
+2. Under **App Update**, tap **"Load this version"** next to the latest available version.
+
+Firefox Android users: install via **browser menu → Add to Home Screen**. Camera capture and OCR work fully. If an OCR error appears, enter readings manually — values are always editable before saving.
+
+### Safari (iOS)
+Install via **Share → Add to Home Screen**. Camera capture works. Service worker offline support is available but updates require re-opening the browser tab to the live URL.
+
+---
+
 ## Tech Stack
 
 - **OCR:** Tesseract.js v5 (WebAssembly, on-device)

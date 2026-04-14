@@ -449,15 +449,14 @@ async function runOCR(dataUrl) {
     });
     const result = await worker.recognize(canvas.toDataURL('image/png'));
     const text   = result.data.text;
-    // Merge runs of single digits separated by spaces ("1 2 0" → "120", "8 5" → "85")
-    const merged = text.replace(/\b(\d)(\s+\d\b)+/g, m => m.replace(/\s+/g, ''));
-    const nums   = merged.match(/\b\d{2,3}\b/g) || [];
     const brand  = detectBrand(text);
-    if (nums.length >= 3) {
-      const n = nums.map(Number).sort((a, b) => b - a);
-      return { sys: n[0], dia: n[1], hr: n[2], brand, rawText: text };
-    }
-    return { sys: null, dia: null, hr: null, brand, rawText: text };
+    // Extract all digit runs (no merging — avoid joining unrelated numbers)
+    const allNums = (text.match(/\d+/g) || []).map(Number);
+    // Range-based extraction: use BP physiology to identify each value
+    const sys = allNums.find(n => n >= 90 && n <= 220) ?? null;
+    const dia = sys ? (allNums.find(n => n >= 50 && n <= 130 && n < sys) ?? null) : null;
+    const hr  = allNums.find(n => n >= 40 && n <= 180 && n !== sys && n !== dia) ?? null;
+    return { sys, dia, hr, brand, rawText: text };
   } finally {
     await worker.terminate();
   }
