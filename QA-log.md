@@ -485,6 +485,230 @@ In both cases, the OCR pipeline did not return usable values. The loading overla
 
 ---
 
+## OCR Lab Session — 7-Segment LCD Feasibility Test — 2026-04-14 (Claude Sonnet 4.6)
+
+### Goal
+Determine whether standard OCR engines can read 7-segment LCD digits from Omron HEM-7121 photos, and if so, what preprocessing pipeline makes it work. Establish a repeatable test suite other AI models can run and extend.
+
+### Test Environment
+| Item | Value |
+|------|-------|
+| OS | Ubuntu 24.04 LTS |
+| Python | 3.12 |
+| PIL/Pillow | available (`python3 -c "from PIL import Image"`) |
+| numpy | available |
+| tesseract CLI | 5.3.4 (`sudo apt-get install -y tesseract-ocr`) |
+| pytesseract | 0.3.13 (`sudo pip3 install pytesseract --break-system-packages`) |
+| tessdata available | `eng.traineddata`, `osd.traineddata` only — no LCD-specific data |
+| ocrad.js | Used in the PWA (browser-side); not available as CLI |
+| Test script | `scripts/ocr_test.py` |
+| Sample images | `Bloodpressure Samples/` (5 photos, Samsung Galaxy A17 5G) |
+
+### Sample Images — Ground Truth
+EXIF metadata (DateTimeOriginal, Make, Model, GPS) is present but **does NOT contain BP readings**. Readings are embedded visually in the LCD display only.
+
+| Filename | Date/Time | Ground Truth | Confidence | Image Condition |
+|----------|-----------|--------------|------------|-----------------|
+| 20260409_215943.jpg | 2026-04-09 21:59 | N/A — mid-measurement | ✅ Confirmed | Device rotated ~90° CCW; display shows dashes (measurement in progress, no final reading) |
+| 20260410_120217.jpg | 2026-04-10 12:02 | SYS=153 DIA=97 PULSE=76 | ⚠️ Visual estimate — needs user confirmation | Device tilted ~15°; digits readable but distorted by perspective |
+| 20260411_195510.jpg | 2026-04-11 19:55 | SYS=105 DIA=72 PULSE=58 | ⚠️ Visual estimate — needs user confirmation | Upright, clear; slight glare on right side of LCD |
+| 20260413_201728.jpg | 2026-04-13 20:17 | SYS=97 DIA=78 PULSE=65 | ⚠️ Visual estimate — SYS could be 127 (leading "1" hard to see in LCD) | Clear, upright, good lighting |
+| 20260414_112450.jpg | 2026-04-14 11:24 | **SYS=118 DIA=78 PULSE=59** | ✅ Confirmed by user | Clear, upright, slight glare on LCD |
+
+> **Notes for next model / user:**
+> - Confirm or correct the three ⚠️ visual estimates above — update `GROUND_TRUTH` dict in `scripts/ocr_test.py` once confirmed
+> - 20260409 is a discard — no final reading captured. Leave GT = `None` in test script.
+> - For 20260413: SYS=97 gives PP=19 (just below our 20mmHg minimum). If SYS=127 then PP=49 ✓. User should confirm.
+> - All images: Samsung Galaxy A17 5G, 4080×3060, EXIF has DateTimeOriginal but **no BP values in metadata**
+
+### HEM-7121 Display Layout (from visual inspection)
+The LCD has three rows of 7-segment digits:
+```
+Row 1 (top):    [SYS digit 1][SYS digit 2][SYS digit 3]   [PULSE digit 1][PULSE digit 2]
+Row 2 (middle): [DIA digit 1][DIA digit 2][DIA digit 3]
+Row 3 (bottom): [memory/battery indicators / dashes]
+```
+Approximate pixel regions in a 4080×3060 photo (varies slightly per shot):
+- LCD area:       x 28–88%,  y 12–65%
+- SYS digits:     x 30–62%,  y 16–43%
+- PULSE digits:   x 70–87%,  y 16–38% ← **crop coord still needs calibration**
+- DIA digits:     x 30–62%,  y 40–65%
+
+The "OMRON" label and "SYS/DIA/PULSE mmHg//min" text are **printed on the device body below the LCD**, not on the LCD screen itself.
+
+### Preprocessing Tested
+All tests ran on `20260414_112450.jpg` (only image with confirmed ground truth).
+
+| Strategy | Description |
+|----------|-------------|
+| `gray_thresh_normal` | Grayscale → upscale 1800px → binary threshold at 128 |
+| `gray_thresh_inverted` | Same, then invert |
+| `contrast_normal` | Contrast ×3 + sharpen → threshold |
+| `lcd_crop_normal` | Crop to x:15–90% y:8–62%, grayscale, threshold |
+| `lcd_crop_inverted` | Same, inverted |
+| `adaptive` | Gaussian blur r=30 as local mean; subtract to get local contrast; binary |
+
+Saved to `/tmp/bp_*.png` for visual inspection during session (not persistent).
+
+### Tesseract Configs Tested
+`--psm 6`, `--psm 7`, `--psm 8`, `--psm 11` × digit-whitelist and full-text variants.  
+`--oem 0` (legacy engine) — **FAILED**: legacy `.traineddata` not installed.
+
+### Test Results — All Strategies × All Configs
+**All 5 images returned NO_EXTRACT across all strategy/config combinations.**
+
+Representative raw OCR outputs from `20260414_112450.jpg`:
+
+| Strategy / Config | Raw text (trimmed) | Nums found | Expected |
+|---|---|---|---|
+| `1_raw / psm6` | `'. 2 a f iti . ' F : 3 3 Z…'` | `['20']` | 118,78,59 |
+| `2_thresh_normal / psm11` | `'20oOc Cc =e Wi af Sc…'` | `['20']` | — |
+| `3_thresh_inv / psm11d` | `'200'` | `['200']` | — |
+| `4_lcd_crop / psm11` | `'ee 200c'` | `['200']` | — |
+| `adaptive / psm6_digits` | `'7 3 2 4 2 2 8 1 7 8 2 2 4…85'` | `['85']` | — |
+| Tight SYS crop (x:28–64%) | `'7'`, `'4'`, `'08'` | — | 118 |
+
+The `"20"` that appears repeatedly is extracted from the **"OMRON" body text**, not the LCD digits. The `"200"` is a misread of the LCD border/frame arcs.
+
+### Root Cause Analysis: Why OCR Fails on 7-Segment LCD
+
+The 7-segment digit shapes are geometrically unlike printed/typed characters:
+
+| Digit | Printed text | 7-Segment LCD appearance |
+|-------|-------------|--------------------------|
+| **1** | Thin vertical stroke | Two thin rectangular bars (right column only) — looks like `\|\|` or a border artifact |
+| **8** | Rounded curves | Solid rectangle with two rectangular holes — looks like a box frame |
+| **0** | Oval | Rectangular outline with one hole |
+| **5** | Curved top-left | L-shaped segments |
+
+Tesseract is trained on printed/typed fonts (Times, Helvetica, handwriting etc.). It pattern-matches outline shapes, and **7-segment digit outlines do not match any trained character**.
+
+This is a **fundamental limitation** of general-purpose OCR on 7-segment displays, not a preprocessing problem.
+
+### Visual Inspection Findings (preprocessed images)
+- Binary threshold (128) on the LCD crop region: digits are clearly visible and bold in the output image. A human can read them. OCR cannot.
+- Adaptive local-contrast image: digits appear white-on-dark, even cleaner. Still OCR-unreadable.
+- The "EM-7121" text rotated 90° on the left edge of every crop is consistent noise.
+
+### What Would Actually Work — Ranked by Effort
+
+| Approach | Difficulty | Likely Accuracy | Notes |
+|----------|-----------|-----------------|-------|
+| **A. LCD tessdata** (`letsgodigital.traineddata`) | Low — one file download | High | Specifically trained on 7-segment displays. URL: `https://github.com/Shreeshrii/tessdata_ssd/raw/master/letsgodigital.traineddata` — place in `/usr/share/tesseract-ocr/5/tessdata/`. Use with `--psm 8 -l letsgodigital`. Not tested yet (wget blocked). |
+| **B. 7-segment template matching** | Medium | Very high | For each digit position: extract 8×8 pixel grid, check which of 7 segment zones are "on". Map segment pattern to digit 0–9. Pure PIL/numpy. |
+| **C. Colour-range LCD segmentation** | Medium | High | LCD pixels have a distinct grey-green colour range. Threshold on colour (not luminance) to isolate display pixels from surrounding white plastic. |
+| **D. LLM/VLM image API** | Low (API call) | Highest | Send the cropped LCD image to a vision model (GPT-4o, Claude Vision, etc.). Out of scope for offline PWA. |
+| **E. Improve ocrad.js pipeline** | Medium | Unknown | ocrad.js in the PWA uses the same binary-threshold approach. Could add Approach C (colour segmentation) as a pre-step before passing to OCRAD. |
+
+### Next Steps for the Next Model
+
+**Step 1 — Confirm ground truth (if not already done)**
+The three ⚠️ visual estimates in the table above need user confirmation. Ask the user to confirm or correct:
+- 20260410: SYS=153 DIA=97 PULSE=76
+- 20260411: SYS=105 DIA=72 PULSE=58
+- 20260413: SYS=97 (or 127?) DIA=78 PULSE=65
+Once confirmed, update `GROUND_TRUTH` in `scripts/ocr_test.py`.
+
+**Step 2 — Test Approach A: LCD-specific tessdata**
+Tesseract `eng` training data does not recognise 7-segment LCD digits. A dedicated traineddata file exists:
+```bash
+# Install LCD tessdata (one file, ~2MB)
+sudo wget "https://github.com/Shreeshrii/tessdata_ssd/raw/master/letsgodigital.traineddata" \
+  -O /usr/share/tesseract-ocr/5/tessdata/letsgodigital.traineddata
+```
+Then add this block to `scripts/ocr_test.py` STRATEGIES list:
+```python
+# Requires letsgodigital.traineddata installed (see above)
+("lcd_tess_crop",    lambda img: prep_lcd_crop(img)),
+```
+And add these configs to TESS_CONFIGS:
+```python
+("lcd_psm8",  "--psm 8 -l letsgodigital"),
+("lcd_psm6",  "--psm 6 -l letsgodigital"),
+("lcd_psm11", "--psm 11 -l letsgodigital"),
+```
+Run `python3 scripts/ocr_test.py` and record results in QA-log.md.
+
+**Step 3 — If Approach A is insufficient, implement Approach B: 7-segment template matching**
+This is a pure PIL/numpy approach with no external dependencies.
+Add to `scripts/ocr_test.py`:
+
+```python
+def read_7seg_digit(cell):
+    """
+    cell: PIL Image of a single 7-segment digit, grayscale, any size.
+    Returns: digit 0-9 or None.
+    Segments: a=top, b=top-right, c=bot-right, d=bot, e=bot-left, f=top-left, g=mid
+    """
+    import numpy as np
+    c = cell.convert("L").resize((20, 30), Image.LANCZOS)
+    arr = np.array(c) < 128  # True = dark = segment ON
+
+    # Sample zone centres as fractions of (height, width)
+    zones = {
+        'a': (0.10, 0.50),  # top horizontal
+        'b': (0.30, 0.85),  # top-right vertical
+        'c': (0.70, 0.85),  # bot-right vertical
+        'd': (0.90, 0.50),  # bottom horizontal
+        'e': (0.70, 0.15),  # bot-left vertical
+        'f': (0.30, 0.15),  # top-left vertical
+        'g': (0.50, 0.50),  # middle horizontal
+    }
+    # 3×3 sample window per zone
+    seg = {}
+    h, w = arr.shape
+    for name, (yr, xr) in zones.items():
+        y, x = int(yr*h), int(xr*w)
+        patch = arr[max(0,y-1):y+2, max(0,x-1):x+2]
+        seg[name] = patch.mean() > 0.4  # majority dark = on
+
+    # Standard 7-segment digit map
+    digit_map = {
+        (1,1,1,1,1,1,0): '0',
+        (0,1,1,0,0,0,0): '1',
+        (1,1,0,1,1,0,1): '2',
+        (1,1,1,1,0,0,1): '3',
+        (0,1,1,0,0,1,1): '4',
+        (1,0,1,1,0,1,1): '5',
+        (1,0,1,1,1,1,1): '6',
+        (1,1,1,0,0,0,0): '7',
+        (1,1,1,1,1,1,1): '8',
+        (1,1,1,1,0,1,1): '9',
+    }
+    key = tuple(int(seg[s]) for s in 'abcdefg')
+    return digit_map.get(key, None)
+```
+
+Then add a function that splits the LCD crop into individual digit cells and calls `read_7seg_digit` on each.
+The cell boundaries must be calibrated from the actual pixel positions in the crops (use saved `/tmp/bp_*.png` files as a guide).
+
+**Step 4 — Port to app.js (browser)**
+Once a working pipeline is found in Python:
+- If Approach A (LCD tessdata): The tessdata approach cannot run in browser. Consider Approach C (colour segmentation + segment template) as a browser-compatible alternative.
+- If Approach B (segment template): Port the zone-sampling logic to JavaScript. It's pure array arithmetic — fully compatible with ocrad.js preprocessing canvas pipeline.
+- Target: replace or augment `preprocessForOCR()` + `extractBP()` in `app.js`.
+
+**Step 5 — Validate and commit**
+Run test script on all 5 images. Target: `SYS+DIA_MATCH` on ≥3 confirmed images (exclude 20260409).
+Append findings to QA-log.md. Commit `scripts/ocr_test.py` + `app.js` changes.
+
+### Status
+| Item | Status |
+|------|--------|
+| Test environment set up (tesseract + pytesseract) | ✅ Done |
+| Test script created: `scripts/ocr_test.py` | ✅ Done |
+| Ground truth confirmed for 20260414_112450.jpg | ✅ 118/78/59 |
+| Ground truth for 4 other images | ❌ Not yet recorded |
+| Standard OCR (tesseract `eng`) on all images | ✅ Tested — **ALL FAIL** |
+| Root cause identified | ✅ 7-segment LCD ≠ printed text — training data mismatch |
+| LCD tessdata (`letsgodigital`) tested | ❌ Not yet — wget was blocked |
+| 7-segment template matching implemented | ❌ Not yet |
+| Colour-range LCD segmentation tested | ❌ Not yet |
+| Any approach achieving SYS+DIA match | ❌ Not yet |
+| `app.js` OCR pipeline improved | ❌ Blocked until desktop test passes |
+
+---
+
 ## OCR Engine Evaluation — Omron HEM-7121 Image — 2026-04-14T17:15+08:00
 
 ### Test Subject
