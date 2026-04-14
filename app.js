@@ -2,7 +2,8 @@
 'use strict';
 
 // =================== Build Info ===================
-const LOCAL_SHA = 'dev'; // Injected by CI during deployment
+const APP_VERSION = 'dev'; // Injected by CI during deployment
+const BUILD_SHA = 'dev';   // Injected by CI during deployment
 const BUILD_DATE = '2026-04-14';
 const REPO_OWNER = 'Comfac-Global-Group';
 const REPO_NAME = 'bp-app';
@@ -89,23 +90,25 @@ function badgeClass(cat) {
 // =================== Version Check ===================
 async function checkVersion() {
   const badge = document.getElementById('version-badge');
-  badge.textContent = `v${LOCAL_SHA}`;
+  if (APP_VERSION === 'dev') {
+    badge.textContent = 'vdev';
+    badge.title = 'Development build';
+  } else {
+    badge.textContent = `v${APP_VERSION}`;
+  }
   try {
     const res = await fetch(`https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/commits/main`, { method: 'GET', cache: 'no-store' });
     if (!res.ok) throw new Error('fetch failed');
     const data = await res.json();
     const remote = (data.sha || '').substring(0, 7);
-    if (remote && remote !== LOCAL_SHA) {
-      badge.textContent = `Update available (${LOCAL_SHA})`;
+    if (BUILD_SHA !== 'dev' && remote && remote !== BUILD_SHA) {
       badge.classList.add('update');
-      badge.title = `Latest: ${remote}`;
-    } else {
-      badge.textContent = `Up to date (${LOCAL_SHA})`;
+      badge.title = `Update available • Latest: ${remote}`;
+    } else if (BUILD_SHA !== 'dev') {
       badge.classList.add('ok');
-      badge.title = `Build ${BUILD_DATE}`;
+      badge.title = `Up to date • Build ${BUILD_DATE}`;
     }
   } catch (e) {
-    badge.textContent = `v${LOCAL_SHA}`;
     badge.title = 'Offline or rate-limited';
   }
 }
@@ -1126,7 +1129,7 @@ async function loadSettings() {
   document.getElementById('setting-name').value = u?.name || '';
   document.getElementById('setting-dob').value = u?.date_of_birth || '';
   document.getElementById('setting-physician').value = u?.physician_name || '';
-  document.getElementById('settings-build-sha').textContent = LOCAL_SHA;
+  document.getElementById('settings-build-sha').textContent = APP_VERSION === 'dev' ? 'dev' : `${APP_VERSION} (${BUILD_SHA})`;
   document.getElementById('setting-dark-mode').checked = (localStorage.getItem('bplog_theme') === 'dark');
 }
 

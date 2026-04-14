@@ -23,10 +23,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Inject build SHA
+      - name: Inject build version and SHA
         run: |
           SHA="${{ github.sha }}"
-          sed -i "s/const LOCAL_SHA = 'dev'; \/\/ Injected by CI during deployment/const LOCAL_SHA = '${SHA:0:7}';\/\/ Injected by CI/" app.js
+          COUNT=$(git rev-list --count HEAD)
+          VERSION=$(awk "BEGIN {printf \"%.2f\", 1.00 + $COUNT * 0.01}")
+          sed -i "s/const APP_VERSION = 'dev'; \/\/ Injected by CI during deployment/const APP_VERSION = '$VERSION';\/\/ Injected by CI/" app.js
+          sed -i "s/const BUILD_SHA = 'dev';   \/\/ Injected by CI during deployment/const BUILD_SHA = '${SHA:0:7}';  \/\/ Injected by CI/" app.js
       - name: Setup Pages
         uses: actions/configure-pages@v5
       - name: Upload artifact

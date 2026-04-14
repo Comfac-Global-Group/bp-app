@@ -160,6 +160,29 @@ git push origin main
 | GitHub Pages Deploy Workflow | ✅ |
 | Git Push to `main` | ✅ |
 
+## 12:15 — Version Badge Visibility & Auto-Increment Fix
+
+### Issues Found
+1. **Version badge not clearly visible** — it was placed in `.header-meta` between the logo and nav buttons, which caused it to be hidden or squashed on narrow mobile viewports.
+2. **Version badge showed commit hash, not version number** — users expected a semantic version (e.g., v1.05), not a SHA.
+3. **No auto-incrementing version** — the FRD required the version to increase by 0.01 every commit/push.
+
+### Fixes Applied
+- **Moved version badge** directly beside the BPLog logo inside `header .title` for guaranteed visibility on all screen sizes.
+- **Introduced `APP_VERSION`** — replaced single `LOCAL_SHA` variable with two injected constants:
+  - `APP_VERSION` — numeric version computed in CI as `1.00 + (commit_count × 0.01)`
+  - `BUILD_SHA` — short commit hash used only for the background sync-check against GitHub API
+- **Updated GitHub Actions workflow** — deployment step now calculates commit count with `git rev-list --count HEAD`, computes the version with `awk`, and injects both `APP_VERSION` and `BUILD_SHA` into `app.js` before upload.
+- **Badge behavior:**
+  - Shows `vX.XX` (e.g., `v1.06`) in production
+  - Shows `vdev` during local development
+  - Turns green when `BUILD_SHA` matches remote `main`
+  - Turns amber when an update is available
+- **Settings page** now displays both version and build SHA (e.g., `1.06 (6d3cc38)`).
+- **FRD §15** updated to describe the 0.01 auto-increment rule and logo-adjacent placement.
+
+---
+
 ## Known Limitations / Notes
 - OCR accuracy depends on image quality and contrast; values are always presented in editable fields before save.
 - PWA install prompt requires HTTPS and a supporting browser; fallback is manual "Add to Home Screen."

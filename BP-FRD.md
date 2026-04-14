@@ -378,12 +378,12 @@ Recommended sequencing for incremental build and testing:
 ## 15. Version Tracking
 
 ### 15.1 Automated Version Badge
-- A version badge is displayed in the **top-right corner** of the app (inside the sticky header).
-- The badge shows:
-  - **Local build SHA** (short hash, hardcoded in `app.js` at build time)
-  - **Sync status** — on load, the app fetches the latest commit SHA from the GitHub API (`repos/Comfac-Global-Group/bp-app/commits/main`)
-  - If local SHA matches remote → **"Up to date"** (green)
-  - If mismatch or fetch fails → **"Update available"** (amber)
+- A version badge is displayed **beside the BPLog logo** in the sticky header.
+- The badge shows a numeric version (e.g., **v1.05**) that auto-increments by **0.01** for every commit pushed to `main`.
+- **Version formula:** `1.00 + (total_commit_count × 0.01)` — computed and injected into `app.js` automatically by the GitHub Actions deployment workflow.
+- **Sync status** — on load, the app fetches the latest commit SHA from the GitHub API (`repos/Comfac-Global-Group/bp-app/commits/main`) and compares it to the build SHA injected at deploy time:
+  - If local build SHA matches remote → badge turns **green** with tooltip "Up to date"
+  - If mismatch or fetch fails → badge turns **amber** with tooltip "Update available"
 - This allows users and testers to instantly verify whether the live site has received the latest pushed changes.
 
 ---
