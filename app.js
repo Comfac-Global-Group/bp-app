@@ -2,7 +2,7 @@
 'use strict';
 
 // =================== Build Info ===================
-const LOCAL_SHA = '83a8a29';
+const LOCAL_SHA = '82f865d';
 const BUILD_DATE = '2026-04-14';
 const REPO_OWNER = 'Comfac-Global-Group';
 const REPO_NAME = 'bp-app';
@@ -16,6 +16,7 @@ const state = {
   images: [], // metadata only
   pendingImage: null, // { blob, dataUrl, timestamp }
   pendingEntryId: null,
+  fileQueue: [],
   charts: {},
   deferredInstall: null,
   allTagRegistry: new Set(),
@@ -33,12 +34,17 @@ applyTheme();
 // =================== IndexedDB ===================
 let db;
 async function initDB() {
-  db = await idb.openDB('bplog', 1, {
-    upgrade(db) {
+  db = await idb.openDB('bplog', 2, {
+    upgrade(db, oldVersion, newVersion, transaction) {
       if (!db.objectStoreNames.contains('users')) db.createObjectStore('users', { keyPath: 'id' });
+      let entriesStore;
       if (!db.objectStoreNames.contains('entries')) {
-        const es = db.createObjectStore('entries', { keyPath: 'id' });
-        es.createIndex('user_id', 'user_id', { unique: false });
+        entriesStore = db.createObjectStore('entries', { keyPath: 'id' });
+      } else {
+        entriesStore = transaction.objectStore('entries');
+      }
+      if (!entriesStore.indexNames.contains('user_id')) {
+        entriesStore.createIndex('user_id', 'user_id', { unique: false });
       }
       if (!db.objectStoreNames.contains('images')) db.createObjectStore('images', { keyPath: 'entry_id' });
       if (!db.objectStoreNames.contains('tags')) db.createObjectStore('tags', { keyPath: 'user_id' });
@@ -337,7 +343,12 @@ document.getElementById('input-gallery').addEventListener('change', handleFiles)
 async function handleFiles(ev) {
   const files = Array.from(ev.target.files);
   if (!files.length) return;
-  const file = files[0];
+  state.fileQueue = files.slice(1);
+  await loadFileIntoOCR(files[0]);
+  ev.target.value = '';
+}
+
+async function loadFileIntoOCR(file) {
   const blob = file;
   const dataUrl = await blobToDataUrl(blob);
   let timestamp = new Date().toISOString();
@@ -366,7 +377,6 @@ async function handleFiles(ev) {
     console.error('OCR error', e);
   }
   hideLoading();
-  ev.target.value = '';
 }
 
 function blobToDataUrl(blob) {
@@ -456,6 +466,7 @@ function renderOcrTags() {
 document.getElementById('btn-ocr-cancel').addEventListener('click', () => {
   state.pendingImage = null;
   state.pendingEntryId = null;
+  state.fileQueue = [];
   ocrTags.length = 0;
   renderOcrTags();
   showScreen('home');
@@ -494,7 +505,11 @@ document.getElementById('btn-ocr-save').addEventListener('click', async () => {
   ocrTags.length = 0;
   renderOcrTags();
   await loadData();
-  showScreen('home');
+  if (state.fileQueue.length) {
+    await loadFileIntoOCR(state.fileQueue.shift());
+  } else {
+    showScreen('home');
+  }
 });
 
 // =================== Logs ===================
@@ -1197,6 +1212,20 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(console.error);
 }
 
+// =================== URL Shortcuts ===================
+function handleUrlShortcuts() {
+  const params = new URLSearchParams(window.location.search);
+  const shortcut = params.get('shortcut');
+  if (shortcut === 'camera') {
+    setTimeout(() => document.getElementById('input-camera').click(), 300);
+  } else if (shortcut === 'logs') {
+    setTimeout(() => showScreen('logs'), 300);
+  }
+  if (shortcut) {
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+}
+
 // =================== Init ===================
 (async () => {
   await initDB();
@@ -1206,4 +1235,5 @@ if ('serviceWorker' in navigator) {
   checkVersion();
   initLandingCard();
   initDisclaimer();
+  handleUrlShortcuts();
 })();

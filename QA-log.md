@@ -117,6 +117,26 @@ git push origin main
 
 ---
 
+## 12:10 — QA Fixes Round (Post-v1.2 Inspection)
+
+### Issues Found
+1. **LOCAL_SHA mismatch** — hardcoded to `83a8a29` but actual latest commit was `82f865d`, causing version badge to falsely report "Update available".
+2. **IndexedDB version stale** — database version was still `1`. Existing browsers that loaded v1.1 would never receive the `user_id` index on `entries`, causing `getAllFromIndex` to throw in `deleteUser`.
+3. **Multi-file upload only processed first file** — FRD requires multi-file select, but `handleFiles` ignored files after index 0.
+4. **Manifest missing shortcuts** — FRD §10 mentions PWA shortcuts, but `manifest.json` had no `shortcuts` array.
+
+### Fixes Applied
+- **LOCAL_SHA** updated to `82f865d`
+- **IndexedDB** bumped to version `2` with safe index migration logic using `transaction.objectStore('entries')` to add `user_id` index on existing stores
+- **Multi-file queue** implemented — `state.fileQueue` holds remaining files; after saving an entry, the next file auto-loads into OCR preview; cancel clears the queue
+- **Manifest shortcuts** added — "Take Photo" (`?shortcut=camera`) and "View Logs" (`?shortcut=logs`) with inline SVG icons
+- **URL shortcut handling** added in `app.js` — parses `?shortcut=` on init and triggers camera/logs automatically
+
+### Validation
+- Ran `node -c app.js` → syntax valid
+
+---
+
 ## Build Summary
 | Component | Status |
 |-----------|--------|
@@ -124,6 +144,7 @@ git push origin main
 | IndexedDB Schema | ✅ |
 | User Profiles + Header Dropdown | ✅ |
 | Camera / Gallery Capture | ✅ |
+| Multi-file Upload Queue | ✅ |
 | Tesseract.js OCR (on-device) | ✅ |
 | EXIF Timestamp Extraction | ✅ |
 | Log CRUD + Filters + User/Date Header | ✅ |
@@ -135,6 +156,7 @@ git push origin main
 | Offline Indicator | ✅ |
 | Landing Instructions | ✅ |
 | Disclaimer (modal + footer) | ✅ |
+| PWA Shortcuts | ✅ |
 | GitHub Pages Deploy Workflow | ✅ |
 | Git Push to `main` | ✅ |
 
