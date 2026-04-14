@@ -444,6 +444,10 @@ async function runOCR(dataUrl) {
     }
   });
   try {
+    await worker.setParameters({
+      tessedit_char_whitelist: '0123456789',
+      tessedit_pageseg_mode: '6',
+    });
     const result = await worker.recognize(canvas.toDataURL('image/png'));
     const text   = result.data.text;
     const nums   = text.match(/\b\d{2,3}\b/g) || [];
