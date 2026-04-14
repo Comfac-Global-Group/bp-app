@@ -194,9 +194,15 @@ STRATEGIES = {
     # name: (description, fn)
 
     # ── Raw / grayscale ──────────────────────────────────────────────────────
+    "raw_colour":
+        ("Raw colour image — best for PaddleOCR and VLM engines",
+         lambda img: img.convert("RGB")),
     "raw_gray":
         ("Raw grayscale, no threshold",
          lambda img: img.convert("L")),
+    "lcd_crop_colour":
+        ("LCD crop, colour — best for PaddleOCR and VLM engines",
+         lambda img: _lcd_crop(img).convert("RGB")),
 
     # ── Threshold variants (full image) ──────────────────────────────────────
     "gray_thr128":
@@ -321,6 +327,109 @@ def _tess_lang_available(lang):
     td = Path("/usr/share/tesseract-ocr/5/tessdata")
     return (td / f"{lang}.traineddata").exists()
 
+def _engine_paddleocr():
+    """
+    PaddleOCR PP-OCRv4 — modern edge-optimised two-stage pipeline.
+    Install: sudo pip3 install paddlepaddle paddleocr --break-system-packages
+    First run downloads ~24MB of model files to ~/.paddleocr/
+    """
+    def fn(img):
+        try:
+            from paddleocr import PaddleOCR
+        except ImportError:
+            raise RuntimeError(
+                "PaddleOCR not installed. Run: "
+                "sudo pip3 install paddlepaddle paddleocr --break-system-packages")
+        import tempfile
+        # PaddleOCR works best on colour images — pass the original RGB
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as f:
+            tmp = f.name
+        try:
+            # Save as RGB (PaddleOCR handles its own preprocessing internally)
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            img.save(tmp)
+            ocr = PaddleOCR(use_angle_cls=True, lang="en", use_gpu=False,
+                            show_log=False)
+            result = ocr.ocr(tmp, cls=True)
+            # result is list of lists: [[[x,y],...], (text, confidence)]
+            lines = []
+            if result and result[0]:
+                for line in result[0]:
+                    if line and len(line) >= 2:
+                        lines.append(line[1][0])  # text string
+            return "\n".join(lines)
+        finally:
+            os.unlink(tmp)
+    fn.__name__ = "paddleocr"
+    return fn
+
+def _engine_florence2():
+    """
+    Microsoft Florence-2-base VLM — OCR via vision-language model.
+    Install: sudo pip3 install transformers timm --break-system-packages
+    First run downloads ~232MB to ~/.cache/huggingface/
+    """
+    def fn(img):
+        try:
+            from transformers import AutoProcessor, AutoModelForCausalLM
+            import torch
+        except ImportError:
+            raise RuntimeError(
+                "transformers not installed. Run: "
+                "sudo pip3 install transformers timm --break-system-packages")
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        model = AutoModelForCausalLM.from_pretrained(
+            "microsoft/Florence-2-base",
+            torch_dtype=torch.float32,
+            trust_remote_code=True)
+        processor = AutoProcessor.from_pretrained(
+            "microsoft/Florence-2-base", trust_remote_code=True)
+        inputs = processor(text="<OCR>", images=img, return_tensors="pt")
+        with torch.no_grad():
+            out = model.generate(**inputs, max_new_tokens=200,
+                                 num_beams=3, early_stopping=True)
+        return processor.decode(out[0], skip_special_tokens=True)
+    fn.__name__ = "florence2"
+    return fn
+
+def _engine_smolvlm():
+    """
+    HuggingFace SmolVLM-256M-Instruct — micro VLM for edge devices.
+    Install: sudo pip3 install transformers --break-system-packages
+    First run downloads ~500MB to ~/.cache/huggingface/
+    """
+    def fn(img):
+        try:
+            from transformers import AutoProcessor, AutoModelForVision2Seq
+            import torch
+        except ImportError:
+            raise RuntimeError(
+                "transformers not installed. Run: "
+                "sudo pip3 install transformers --break-system-packages")
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        model_id = "HuggingFaceTB/SmolVLM-256M-Instruct"
+        processor = AutoProcessor.from_pretrained(model_id)
+        model = AutoModelForVision2Seq.from_pretrained(
+            model_id, torch_dtype=torch.float32)
+        msgs = [{"role": "user", "content": [
+            {"type": "image"},
+            {"type": "text",
+             "text": ("This is a photo of an Omron HEM-7121 blood pressure monitor. "
+                      "The LCD display shows three numbers. "
+                      "What are the systolic (SYS), diastolic (DIA), "
+                      "and pulse numbers shown?")}
+        ]}]
+        prompt = processor.apply_chat_template(msgs, add_generation_prompt=True)
+        inputs = processor(text=prompt, images=[img], return_tensors="pt")
+        with torch.no_grad():
+            out = model.generate(**inputs, max_new_tokens=80)
+        return processor.decode(out[0], skip_special_tokens=True)
+    fn.__name__ = "smolvlm"
+    return fn
+
 ENGINES = {
     # name: (description, install_cmd, fn)
 
@@ -371,6 +480,22 @@ ENGINES = {
         ("GNU OCRAD — general-purpose OCR (same engine as browser ocrad.js)",
          "sudo apt-get install -y ocrad",
          _engine_ocrad()),
+
+    # ── Tier 1: Modern edge-optimised engines ────────────────────────────────
+    "paddleocr":
+        ("PaddleOCR PP-OCRv4 — edge-optimised, two-stage detection+recognition",
+         "sudo pip3 install paddlepaddle paddleocr --break-system-packages",
+         _engine_paddleocr()),
+
+    "florence2":
+        ("Microsoft Florence-2-base VLM (~232MB) — OCR via vision-language model",
+         "sudo pip3 install transformers timm --break-system-packages",
+         _engine_florence2()),
+
+    "smolvlm":
+        ("HuggingFace SmolVLM-256M-Instruct (~500MB) — micro VLM, natural-language query",
+         "sudo pip3 install transformers --break-system-packages",
+         _engine_smolvlm()),
 }
 
 # ---------------------------------------------------------------------------

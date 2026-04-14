@@ -26,13 +26,28 @@ Only test other images after success — to check the solution generalises.
 
 ### Testing Methodology
 1. **Single image first.** Do not spread effort across all 5 images until step 1 works.
-2. **Install missing engines first** — `letsgodigital` and `ocrad` are highest priority:
+2. **Install missing engines first** — priority order is: PaddleOCR → letsgodigital → ocrad → digits:
    ```bash
+   # PaddleOCR — modern edge-optimised engine, highest expected accuracy (Priority 1)
+   sudo pip3 install paddlepaddle paddleocr --break-system-packages
+
+   # GNU ocrad CLI — same engine as browser ocrad.js (Priority 2)
    sudo apt-get install -y ocrad
+
+   # Tesseract LCD-specific trained data (Priority 3)
    sudo wget -O /usr/share/tesseract-ocr/5/tessdata/letsgodigital.traineddata \
      "https://github.com/Shreeshrii/tessdata_ssd/raw/master/letsgodigital.traineddata"
+
+   # Tesseract digits-only trained data (Priority 4)
    sudo wget -O /usr/share/tesseract-ocr/5/tessdata/digits.traineddata \
      "https://github.com/tesseract-ocr/tessdata/raw/main/digits.traineddata"
+
+   # Florence-2-base VLM (Priority 5 — if all OCR engines fail)
+   sudo pip3 install transformers timm --break-system-packages
+   # First run auto-downloads ~232MB model to ~/.cache/huggingface/
+
+   # SmolVLM-256M VLM (Priority 6 — alternative micro VLM)
+   # Same install as Florence-2. First run downloads ~500MB.
    ```
 3. **Run the benchmark:**
    ```bash
@@ -581,22 +596,47 @@ Output:
 
 ### OCR Engine Inventory
 
-All engines must be tested. Install commands are in the script docstring and table below.
+Complete catalogue of all engines to be tested, in priority order. Install commands are in `scripts/ocr_bench.py` docstring and repeated here.
 
-| Engine ID | Description | Install Command | Status |
-|-----------|-------------|-----------------|--------|
-| `tesseract_eng_psm6` | Tesseract eng, block mode | `sudo apt-get install -y tesseract-ocr` | ✅ installed |
-| `tesseract_eng_psm11` | Tesseract eng, sparse mode | same | ✅ installed |
-| `tesseract_eng_psm6_digits` | Tesseract eng, digit-only | same | ✅ installed |
-| `tesseract_eng_psm7_digits` | Tesseract eng, single-line digits | same | ✅ installed |
-| `tesseract_eng_psm8_digits` | Tesseract eng, single-word digits | same | ✅ installed |
-| `tesseract_lcd_psm6` | Tesseract letsgodigital (LCD-trained) PSM6 | `sudo wget -O /usr/share/tesseract-ocr/5/tessdata/letsgodigital.traineddata https://github.com/Shreeshrii/tessdata_ssd/raw/master/letsgodigital.traineddata` | ❌ not installed |
-| `tesseract_lcd_psm8` | Tesseract letsgodigital PSM8 single-word | same | ❌ not installed |
-| `tesseract_lcd_psm11` | Tesseract letsgodigital PSM11 sparse | same | ❌ not installed |
-| `tesseract_digits_psm8` | Tesseract digits.traineddata | `sudo wget -O /usr/share/tesseract-ocr/5/tessdata/digits.traineddata https://github.com/tesseract-ocr/tessdata/raw/main/digits.traineddata` | ❌ not installed |
-| `ocrad` | GNU OCRAD CLI (same engine as browser ocrad.js) | `sudo apt-get install -y ocrad` | ❌ not installed |
+#### Tier 1 — Modern Edge-Optimised (highest expected accuracy)
 
-> **Critical:** `ocrad` is the same engine used in the PWA (`ocrad.js`). Testing it on the command line gives direct insight into what the browser OCR is seeing.
+| Engine ID | Description | Model Size | Install | Status |
+|-----------|-------------|------------|---------|--------|
+| `paddleocr` | PaddleOCR PP-OCRv4 — lightweight, ONNX-based, designed for edge/mobile, best-in-class on structured documents | ~12MB detection + ~12MB recognition (auto-downloaded) | `sudo pip3 install paddlepaddle paddleocr --break-system-packages` | ❌ not installed |
+| `florence2` | Microsoft Florence-2-base VLM — purpose-built for OCR and visual understanding | ~232MB (auto-downloaded to `~/.cache/huggingface/`) | `sudo pip3 install transformers timm --break-system-packages` | ❌ not installed |
+| `smolvlm` | HuggingFace SmolVLM-256M-Instruct — micro VLM, answers natural-language questions about images | ~500MB (auto-downloaded) | same as Florence-2 | ❌ not installed |
+
+#### Tier 2 — Tesseract Variants (established, open-source)
+
+| Engine ID | Description | Install | Status |
+|-----------|-------------|---------|--------|
+| `tesseract_eng_psm6` | Tesseract 5 eng, full-block mode | `sudo apt-get install -y tesseract-ocr` | ✅ installed |
+| `tesseract_eng_psm11` | Tesseract 5 eng, sparse text | same | ✅ installed |
+| `tesseract_eng_psm6_digits` | Tesseract eng, digit whitelist | same | ✅ installed |
+| `tesseract_eng_psm7_digits` | Tesseract eng, single line digits | same | ✅ installed |
+| `tesseract_eng_psm8_digits` | Tesseract eng, single word digits | same | ✅ installed |
+| `tesseract_lcd_psm6/8/11` | **letsgodigital** tessdata — specifically trained on 7-segment LCD displays | `sudo wget -O /usr/share/tesseract-ocr/5/tessdata/letsgodigital.traineddata "https://github.com/Shreeshrii/tessdata_ssd/raw/master/letsgodigital.traineddata"` | ❌ not installed |
+| `tesseract_digits_psm8` | digits.traineddata — digit-only training | `sudo wget -O /usr/share/tesseract-ocr/5/tessdata/digits.traineddata "https://github.com/tesseract-ocr/tessdata/raw/main/digits.traineddata"` | ❌ not installed |
+
+#### Tier 3 — CLI / Other
+
+| Engine ID | Description | Install | Status |
+|-----------|-------------|---------|--------|
+| `ocrad` | **GNU OCRAD** — same underlying engine as `ocrad.js` in the browser PWA. CLI result = browser result. | `sudo apt-get install -y ocrad` | ❌ not installed |
+
+#### Tier 4 — Native Mobile SDKs (cannot test in Python — for future app port)
+
+These run entirely on-device, no cloud calls. Cannot be tested in the Python benchmark. Relevant if BPLog is ever ported to a native Android/iOS app.
+
+| SDK | Platform | Description | Notes |
+|-----|----------|-------------|-------|
+| **Google ML Kit — Text Recognition v2** | Android / iOS | Powers Google Lens and Translate offline mode. Downloads a small language model to the device (~5MB). Processes entirely on-device. API: `TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)` | Free, Google Play Services required on Android. Likely handles 7-segment digits via its Lens training data. |
+| **Apple Vision Framework** | iOS / macOS | `VNRecognizeTextRequest` — runs on Neural Engine, fully offline. Used in Notes Live Text, Translate app. | Swift/ObjC only. Sub-100ms on modern iPhones. High accuracy. |
+| **MakeACopy architecture** | Android | Open-source offline document scanner. Uses ONNX model for document edge detection + Tesseract for OCR. Privacy-first, no cloud. Reference implementation for offline OCR pipeline design. | Study the architecture; don't need to run directly. |
+
+> **Why Google ML Kit is interesting:** It is the engine behind real-time offline translation in Google Translate and Google Lens. It has likely been trained on 7-segment LCD displays (calculators, monitors, appliances) as part of its Lens training data. If BPLog is ever published as an Android app, this would be the first OCR engine to try.
+
+> **Why PaddleOCR is the Priority 1 test:** PP-OCRv4 is specifically designed for edge computing and structured document OCR. It uses a two-stage pipeline (text detection → text recognition) that is more robust than single-pass engines. The recognition model is ONNX-exportable, which means it could eventually run in browser via ONNX Runtime Web (`onnxruntime-web` npm package).
 
 ### Preprocessing Strategy Inventory
 
