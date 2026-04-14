@@ -482,3 +482,76 @@ In both cases, the OCR pipeline did not return usable values. The loading overla
 ### Notes
 - The editable fields in the OCR review screen already act as an implicit fallback, but there is no explicit message telling the user *why* the values are blank or what to do next.
 - A future build should catch OCR promise rejection explicitly, show "OCR could not read this image — please enter the values manually," and optionally offer a **Retry** button.
+
+---
+
+## OCR Engine Evaluation — Omron HEM-7121 Image — 2026-04-14T17:15+08:00
+
+### Test Subject
+Image: `20260414_112450.jpg` (Omron HEM-7121 Intelli Sense)
+- Known values: **SYS = 118**, **DIA = 78**, **PULSE = 59**
+- Display type: **7-segment LCD**
+
+### Engines Tested
+1. **Tesseract.js v5** (Node.js, `tesseract.js` npm package)
+2. **ocrad.js** (Node.js, `ocrad.js` npm package)
+
+### Methodology
+Created `test-ocr.mjs` / `test-ocr-focused.mjs` to test multiple preprocessing pipelines against both engines:
+- Original, grayscale, contrast enhancement, inversion, thresholding
+- Rotation (90°), cropping to LCD region, sharpening
+- 2× upscaling (with and without threshold/contrast)
+- Tesseract tested with both default English mode and `tessedit_char_whitelist=0123456789`
+
+### Results
+
+#### Tesseract.js — CATASTROPHIC FAILURE on 7-segment LCD
+| Variant | Best Result | Confidence | Notes |
+|---------|-------------|------------|-------|
+| original | `[]` (gibberish text) | 29 | Complete failure |
+| grayscale | `[]` (gibberish) | 32 | Complete failure |
+| contrast | `[59]` | 34 | Found **only pulse**, missed sys/dia |
+| inverted | `[]` | 30 | Complete failure |
+| threshold | `[71]` | 26 | False positive |
+| rotate90 | `[121]` | 29 | False positive (picked up model number) |
+| crop_lcd | `[21]` | 25 | Complete failure |
+| crop_lcd_contrast | `[]` | 12 | Complete failure |
+| crop_lcd_threshold | `[]` | 24 | Complete failure |
+| sharpen | `[45]` | 33 | False positive |
+| resize2x | `[59]` among 15+ false positives | 23 | Found pulse, flooded with noise |
+| resize2x_threshold | `[]` among 11 false positives | 22 | Flooded with noise |
+| resize2x_contrast | `[]` among 7 false positives | 24 | Flooded with noise |
+
+**Digits whitelist** (`0123456789`) did not improve accuracy meaningfully.
+
+**Root cause:** Tesseract.js is trained on anti-aliased fonts and natural text. 7-segment LCD characters (composed of discrete line segments with gaps) are completely outside its training distribution.
+
+#### ocrad.js — Node.js integration blocked
+ocrad.js could not be executed in the Node.js test environment. It expects a browser `HTMLCanvasElement` with `getContext('2d')` and `getImageData()`. A shimmed canvas object failed with:
+```
+ERROR: Cannot read properties of undefined (reading 'width')
+```
+
+**Action:** Created `test-ocr-browser.html` for in-browser A/B comparison of Tesseract.js vs ocrad.js on the same image.
+
+### Conclusion
+| Finding | Implication |
+|---------|-------------|
+| Tesseract.js is **unsuitable** for 7-segment LCD BP monitors | Explains the "OCR failed unknown error" reports on Chrome Ubuntu and Firefox Android |
+| No amount of standard preprocessing (contrast, threshold, crop, rotate, upscale) fixes this | A preprocessing-only solution is a dead end |
+| ocrad.js may fare better in-browser but cannot be validated server-side | Must be tested in target environment (mobile browser / PWA) |
+| Manual entry fallback is currently the only reliable path | UI must clearly communicate this to users |
+
+### Recommendation
+1. **Replace Tesseract.js with ocrad.js** in the PWA (as the QA log notes Claude previously prototyped).
+2. **Add an explicit OCR failure message** in `app.js`: "Could not read the display automatically. Please enter the values manually."
+3. **Add a "Retry OCR" button** that tries an inverted/alternate preprocess before giving up.
+4. **Run `test-ocr-browser.html` on actual target devices** (Chrome Android, Firefox Android, Chrome desktop) to validate ocrad.js performance before deploying.
+
+### Files Created
+- `test-ocr.mjs` — comprehensive multi-variant Node.js test runner
+- `test-ocr-focused.mjs` — focused Tesseract whitelist + preprocessing test
+- `test-ocr-browser.html` — side-by-side browser test for Tesseract.js vs ocrad.js
+- `test-ocr-*.jpg` / `test-ocr2-*.jpg` — preprocessed image artifacts for inspection
+- `test-ocr-results.json` / `test-ocr2-results.json` — structured result data
+

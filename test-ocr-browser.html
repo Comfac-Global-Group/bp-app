@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>OCR Browser Test — Omron HEM-7121</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; max-width: 900px; margin: 0 auto; }
+    pre { background: #f5f5f5; padding: 10px; overflow-x: auto; }
+    .result { margin: 15px 0; padding: 15px; border-radius: 8px; }
+    .fail { background: #fee2e2; }
+    .partial { background: #fef3c7; }
+    .success { background: #dcfce7; }
+    canvas { max-width: 100%; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <h1>OCR Browser Test — Omron HEM-7121</h1>
+  <p>Target: SYS=118, DIA=78, PULSE=59</p>
+  
+  <h2>Original Image</h2>
+  <img id="source" src="20260414_112450.jpg" style="max-width: 100%" />
+  
+  <h2>Test Results</h2>
+  <div id="output">Loading engines…</div>
+  
+  <!-- ocrad.js from CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/ocrad.js@0.0.2/ocrad.min.js"></script>
+  
+  <script>
+    const output = document.getElementById('output');
+    const img = document.getElementById('source');
+    
+    function extractNumbers(text) {
+      const nums = text.match(/\b\d{2,3}\b/g) || [];
+      return nums.map(Number);
+    }
+    
+    function evaluate(nums) {
+      if (nums.length < 3) return { perfect: false, nums };
+      const has118 = nums.includes(118);
+      const has78 = nums.includes(78);
+      const has59 = nums.includes(59);
+      return { perfect: has118 && has78 && has59, has118, has78, has59, nums };
+    }
+    
+    function algoLabelProximity(text) {
+      const sysMatch = text.match(/SYS[^\d]*(\d{2,3})/i) || text.match(/systolic[^\d]*(\d{2,3})/i);
+      const diaMatch = text.match(/DIA[^\d]*(\d{2,3})/i) || text.match(/diastolic[^\d]*(\d{2,3})/i);
+      const pulseMatch = text.match(/PULSE[^\d]*(\d{2,3})/i) || text.match(/pulse[^\d]*(\d{2,3})/i) || text.match(/\/min[^\d]*(\d{2,3})/i);
+      return { name: 'Label-Proximity', sys: sysMatch ? parseInt(sysMatch[1]) : null, dia: diaMatch ? parseInt(diaMatch[1]) : null, hr: pulseMatch ? parseInt(pulseMatch[1]) : null };
+    }
+    
+    function algoRangePP(text) {
+      const nums = text.match(/\b\d{2,3}\b/g) || [];
+      const n = nums.map(Number).sort((a, b) => b - a);
+      for (let i = 0; i < n.length - 1; i++) {
+        for (let j = i + 1; j < n.length; j++) {
+          const sys = n[i], dia = n[j], pp = sys - dia;
+          if (sys >= 70 && sys <= 250 && dia >= 40 && dia <= 150 && pp >= 20 && pp <= 100) {
+            const hrCandidates = nums.map(Number).filter(x => x !== sys && x !== dia && x >= 40 && x <= 200);
+            return { name: 'Range+PP', sys, dia, hr: hrCandidates.length ? hrCandidates[0] : null };
+          }
+        }
+      }
+      return { name: 'Range+PP', sys: null, dia: null, hr: null };
+    }
+    
+    function algoRangeOnly(text) {
+      const nums = text.match(/\b\d{2,3}\b/g) || [];
+      const valid = nums.map(Number).filter(x => x >= 40 && x <= 250).sort((a, b) => b - a);
+      if (valid.length >= 3) return { name: 'Range-Only', sys: valid[0], dia: valid[1], hr: valid[2] };
+      return { name: 'Range-Only', sys: null, dia: null, hr: null };
+    }
+    
+    function algoOmronLayout(text) {
+      const nums = text.match(/\b\d{2,3}\b/g) || [];
+      const valid = nums.map(Number).filter(x => x >= 40 && x <= 250);
+      if (valid.length >= 3) return { name: 'Omron-Layout-Order', sys: valid[0], dia: valid[1], hr: valid[2] };
+      return { name: 'Omron-Layout-Order', sys: null, dia: null, hr: null };
+    }
+    
+    function runAlgos(text) {
+      return [algoLabelProximity(text), algoRangePP(text), algoRangeOnly(text), algoOmronLayout(text)];
+    }
+    
+    function preprocess(canvas, type) {
+      const w = canvas.width, h = canvas.height;
+      const ctx = canvas.getContext('2d');
+      const imgData = ctx.getImageData(0, 0, w, h);
+      const d = imgData.data;
+      
+      for (let i = 0; i < d.length; i += 4) {
+        const gray = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+        let v = gray;
+        if (type === 'contrast') v = ((gray - 128) * 2.5) + 128;
+        if (type === 'threshold') v = gray > 128 ? 255 : 0;
+        if (type === 'inverted') v = 255 - gray;
+        v = Math.max(0, Math.min(255, v));
+        d[i] = d[i+1] = d[i+2] = v;
+      }
+      
+      if (type !== 'original') {
+        ctx.putImageData(imgData, 0, 0);
+      }
+      return canvas;
+    }
+    
+    async function testTesseract(canvas, variant) {
+      if (typeof Tesseract === 'undefined') return { engine: 'Tesseract.js', variant, error: 'Tesseract.js not loaded' };
+      try {
+        const result = await Tesseract.recognize(canvas, 'eng', {
+          logger: () => {},
+          errorHandler: () => {}
+        });
+        const ev = evaluate(extractNumbers(result.data.text));
+        return { engine: 'Tesseract.js', variant, text: result.data.text, confidence: result.data.confidence, ...ev };
+      } catch (err) {
+        return { engine: 'Tesseract.js', variant, error: err.message };
+      }
+    }
+    
+    function testOcrad(canvas, variant) {
+      if (typeof OCRAD === 'undefined') return { engine: 'ocrad.js', variant, error: 'ocrad.js not loaded' };
+      try {
+        const text = OCRAD(canvas);
+        const ev = evaluate(extractNumbers(text));
+        return { engine: 'ocrad.js', variant, text, ...ev };
+      } catch (err) {
+        return { engine: 'ocrad.js', variant, error: err.message };
+      }
+    }
+    
+    async function runTests() {
+      const variants = ['original', 'grayscale', 'contrast', 'inverted', 'threshold'];
+      const allResults = [];
+      let html = '';
+      
+      for (const variant of variants) {
+        // Create canvas for this variant
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        preprocess(c, variant);
+        
+        const tResult = await testTesseract(c, variant);
+        const oResult = testOcrad(c, variant);
+        allResults.push(tResult, oResult);
+        
+        const tAlgos = tResult.text ? runAlgos(tResult.text) : [];
+        const oAlgos = oResult.text ? runAlgos(oResult.text) : [];
+        
+        const tStatus = tResult.perfect ? 'success' : (tResult.nums?.length > 0 ? 'partial' : 'fail');
+        const oStatus = oResult.perfect ? 'success' : (oResult.nums?.length > 0 ? 'partial' : 'fail');
+        
+        html += `<div class="result ${tStatus === 'success' || oStatus === 'success' ? 'success' : (tStatus === 'partial' || oStatus === 'partial' ? 'partial' : 'fail')}">`;
+        html += `<h3>Variant: ${variant}</h3>`;
+        
+        html += `<h4>Tesseract.js</h4>`;
+        html += `<pre>${tResult.error || `Text: ${JSON.stringify(tResult.text.slice(0, 400))}\nConfidence: ${tResult.confidence}\nNumbers: ${JSON.stringify(tResult.nums)}\nAlgos:\n${tAlgos.map(a => `  ${a.name}: ${a.sys}/${a.dia} HR:${a.hr}`).join('\n')}`}</pre>`;
+        
+        html += `<h4>ocrad.js</h4>`;
+        html += `<pre>${oResult.error || `Text: ${JSON.stringify(oResult.text.slice(0, 400))}\nNumbers: ${JSON.stringify(oResult.nums)}\nAlgos:\n${oAlgos.map(a => `  ${a.name}: ${a.sys}/${a.dia} HR:${a.hr}`).join('\n')}`}</pre>`;
+        html += `</div>`;
+      }
+      
+      const perfect = allResults.filter(r => r.perfect);
+      html += `<div class="result ${perfect.length ? 'success' : 'fail'}">`;
+      html += `<h2>Summary</h2>`;
+      if (perfect.length === 0) {
+        html += `<p>❌ No perfect extractions found.</p>`;
+        html += `<p>Best near-misses:</p><ul>`;
+        allResults.filter(r => r.nums && r.nums.length > 0).forEach(r => {
+          html += `<li>${r.engine} ${r.variant}: ${JSON.stringify(r.nums)}</li>`;
+        });
+        html += `</ul>`;
+      } else {
+        html += `<p>✅ ${perfect.length} perfect hits:</p><ul>`;
+        perfect.forEach(r => html += `<li>${r.engine} — ${r.variant}</li>`);
+        html += `</ul>`;
+      }
+      html += `</div>`;
+      
+      output.innerHTML = html;
+    }
+    
+    // Load Tesseract.js for browser test
+    const tScript = document.createElement('script');
+    tScript.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    tScript.onload = () => { if (img.complete) runTests(); else img.onload = runTests; };
+    document.head.appendChild(tScript);
+  </script>
+</body>
+</html>
