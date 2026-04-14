@@ -436,7 +436,6 @@ function blobToDataUrl(blob) {
 async function runOCR(dataUrl) {
   const canvas = await preprocessImage(dataUrl);
   const worker = await Tesseract.createWorker('eng', 1, {
-    workerBlobURL: false,
     logger: m => {
       if      (m.status === 'loading tesseract core')       updateLoadingText('Loading OCR engine…');
       else if (m.status === 'loading language traineddata') updateLoadingText('Loading language data…');
@@ -1379,6 +1378,8 @@ function handleUrlShortcuts() {
 // =================== Init ===================
 (async () => {
   await initDB();
+  // Request persistent storage so Chrome doesn't evict IndexedDB for the installed PWA
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
   await loadUsers();
   if (state.currentUserId) await loadData();
   updateOnlineStatus();
