@@ -1,7 +1,73 @@
 # BPLog Build QA Log
-**Session Date:** 2026-04-14  
-**Agent:** Kimi Code CLI  
 **Project:** bp-app (`/home/justin/opencode260220/bp-app`)
+**Repo:** `https://github.com/Comfac-Global-Group/bp-app`
+
+---
+
+## ★ HANDOFF INSTRUCTIONS FOR ALL AI MODELS ★
+
+If you are an AI model picking up this project, **read this block first**.
+
+### Current Blocker
+OCR cannot read any digits from Omron HEM-7121 LCD photos.
+All engine × strategy combinations return `NO_EXTRACT`. Zero text recognised.
+Root cause: standard OCR engines are trained on printed fonts, not 7-segment LCD shapes.
+
+### Your Mission
+Get ANY OCR engine to correctly read SYS + DIA from ONE photo.
+
+### Primary Test Image
+```
+Bloodpressure Samples/20260414_112450-omron-118-78-59.jpg
+Expected: SYS=118, DIA=78, PULSE=59
+```
+Work ONLY on this image until you achieve `SYS+DIA_MATCH` or `FULL_MATCH`.
+Only test other images after success — to check the solution generalises.
+
+### Testing Methodology
+1. **Single image first.** Do not spread effort across all 5 images until step 1 works.
+2. **Install missing engines first** — `letsgodigital` and `ocrad` are highest priority:
+   ```bash
+   sudo apt-get install -y ocrad
+   sudo wget -O /usr/share/tesseract-ocr/5/tessdata/letsgodigital.traineddata \
+     "https://github.com/Shreeshrii/tessdata_ssd/raw/master/letsgodigital.traineddata"
+   sudo wget -O /usr/share/tesseract-ocr/5/tessdata/digits.traineddata \
+     "https://github.com/tesseract-ocr/tessdata/raw/main/digits.traineddata"
+   ```
+3. **Run the benchmark:**
+   ```bash
+   cd /home/justin/opencode260220/bp-app
+   python3 scripts/ocr_bench.py --image 20260414 --save-debug 2>&1
+   ```
+4. **Inspect debug images** at `/tmp/bp_debug/` — check that digits look clean before OCR.
+5. **Test ocrad CLI directly** on a debug image to see raw output:
+   ```bash
+   ocrad /tmp/bp_debug/20260414_112450-omron-118-78-59_lcd_crop_thr128.png
+   ```
+6. If still failing, try new preprocessing strategies — add them to `STRATEGIES` in `scripts/ocr_bench.py` and re-run.
+7. When you find a working combination (or hit a dead end), **append to QA-log.md**:
+   ```
+   ## OCR Bench Run — YYYY-MM-DD — <your model name>
+   ### Engines installed: ...
+   ### Best result: strategy=X  engine=Y  score=Z
+   ### Raw OCR text: "..."
+   ### What did NOT work: ...
+   ### Next recommended step: ...
+   ```
+8. Commit and push:
+   ```bash
+   git add scripts/ocr_bench.py QA-log.md scripts/ocr_results.json
+   git commit -m "test(ocr): <model> bench run YYYY-MM-DD — <brief result>"
+   git push origin main
+   ```
+
+### Key Facts
+- `ocrad` CLI = same engine as `ocrad.js` in the browser PWA. CLI result predicts browser result.
+- `letsgodigital.traineddata` is specifically trained on 7-segment LCD digits — highest priority test.
+- "OMRON", "SYS mmHg", "DIA mmHg" text is on the **white plastic body**, NOT the LCD screen.
+- LCD bounding box in photos: approx **x:27–88%, y:12–63%** of the 4080×3060 image.
+- Benchmark script: `scripts/ocr_bench.py` — read the docstring at the top for full instructions.
+- Results accumulate in: `scripts/ocr_results.json`
 
 ---
 
