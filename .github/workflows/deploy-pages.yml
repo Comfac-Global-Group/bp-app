@@ -28,35 +28,68 @@ jobs:
 
       - name: Inject build version and SHA
         run: |
+          set -e
           SHORT_SHA="${{ github.sha }}"
           SHORT_SHA="${SHORT_SHA:0:7}"
           COUNT=$(git rev-list --count HEAD)
-          python3 - "$SHORT_SHA" "$COUNT" <<'PYEOF'
-          import sys, pathlib
+          VERSION=$(python3 -c "print(f'{1.0 + $COUNT * 0.01:.2f}')")
+          DATE=$(date -u +%Y-%m-%d)
+          echo "Injecting: APP_VERSION=$VERSION  BUILD_SHA=$SHORT_SHA  DATE=$DATE  (commit #$COUNT)"
 
-          sha   = sys.argv[1]
-          count = int(sys.argv[2])
-          version = f"{1.0 + count * 0.01:.2f}"
-          print(f"Injecting: APP_VERSION={version}  BUILD_SHA={sha}  (commit #{count})")
+          python3 - "$VERSION" "$SHORT_SHA" "$DATE" <<'PYEOF'
+          import sys, json, pathlib, shutil
 
+          version = sys.argv[1]
+          sha     = sys.argv[2]
+          date    = sys.argv[3]
+
+          # Inject app.js
           app = pathlib.Path('app.js').read_text()
           app = app.replace("const APP_VERSION = 'dev'; /* CI_INJECT_VERSION */",
                             f"const APP_VERSION = '{version}'; /* CI_INJECT_VERSION */")
-          app = app.replace("const BUILD_SHA = 'dev'; /* CI_INJECT_SHA */",
-                            f"const BUILD_SHA = '{sha}'; /* CI_INJECT_SHA */")
+          app = app.replace("const BUILD_SHA = 'dev';   /* CI_INJECT_SHA */",
+                            f"const BUILD_SHA = '{sha}';  /* CI_INJECT_SHA */")
           pathlib.Path('app.js').write_text(app)
 
+          # Inject sw.js
           sw = pathlib.Path('sw.js').read_text()
           sw = sw.replace("const CACHE_NAME = 'bplog-dev'; /* CI_INJECT_CACHE */",
                           f"const CACHE_NAME = 'bplog-{version}'; /* CI_INJECT_CACHE */")
           pathlib.Path('sw.js').write_text(sw)
 
+          # Archive version
+          ver_dir = pathlib.Path(f'versions/v{version}')
+          ver_dir.mkdir(parents=True, exist_ok=True)
+          for f in ['index.html', 'app.js', 'styles.css', 'manifest.json', 'sw.js']:
+              shutil.copy(f, ver_dir / f)
+
+          # Update versions.json
+          versions_file = pathlib.Path('versions.json')
+          data = json.loads(versions_file.read_text()) if versions_file.exists() else {"current": version, "versions": []}
+          data['current'] = version
+
+          # Add new version entry if not already present
+          existing = [v for v in data['versions'] if v['version'] == version]
+          if not existing:
+              data['versions'].insert(0, {
+                  "version": version,
+                  "path": f"./versions/v{version}/",
+                  "sha": sha,
+                  "date": date,
+                  "notes": "Auto-deployed build"
+              })
+          # Keep last 20 versions
+          data['versions'] = data['versions'][:20]
+          versions_file.write_text(json.dumps(data, indent=2))
+
+          # Verify
           app_out = pathlib.Path('app.js').read_text()
           sw_out  = pathlib.Path('sw.js').read_text()
           assert f"APP_VERSION = '{version}'" in app_out,       "FAIL: APP_VERSION not injected"
           assert f"BUILD_SHA = '{sha}'"       in app_out,       "FAIL: BUILD_SHA not injected"
           assert f"CACHE_NAME = 'bplog-{version}'" in sw_out,   "FAIL: CACHE_NAME not injected"
-          print("All injections verified.")
+          assert ver_dir.joinpath('app.js').exists(),           "FAIL: version archive not created"
+          print("All injections and archive verified.")
           PYEOF
 
       - name: Setup Pages

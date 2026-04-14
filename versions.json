@@ -1,0 +1,12 @@
+{
+  "current": "dev",
+  "versions": [
+    {
+      "version": "dev",
+      "path": "./",
+      "sha": "dev",
+      "date": "2026-04-14",
+      "notes": "Development / latest"
+    }
+  ]
+}

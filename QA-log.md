@@ -227,6 +227,31 @@ Screenshot of live site showed **"vdev"** beside the logo, and no proper version
 
 ---
 
+## 12:30 — App Update & Rollback Feature
+
+### FRD Updates
+- Added **§16 App Update & Version Rollback** to `BP-FRD.md`
+- Documented the update button, version archive strategy, and same-origin data safety guarantee
+
+### CI Workflow Updates (`.github/workflows/deploy-pages.yml`)
+- Added **version archiving step**: after injecting `APP_VERSION` and `BUILD_SHA`, the workflow copies `index.html`, `app.js`, `styles.css`, `manifest.json`, and `sw.js` into `versions/vX.XX/`
+- Added **versions.json management**: reads existing manifest, prepends new version, caps list at 20 entries
+- Ensures every deploy is permanently archived and addressable
+
+### App Updates (`index.html`, `app.js`)
+- **Settings screen** now has an **"App Update"** card with:
+  - Live version check against `versions.json`
+  - "Update Now" button when a newer version is available
+  - "Check Again" / "Try Again" buttons on errors
+  - **Previous versions list** with "Open" links to archived builds
+- **Update mechanics:** `doAppUpdate()` unregisters all service workers, deletes all caches, and reloads the root app
+- **Rollback mechanics:** clicking an older version opens `versions/vX.XX/index.html` on the same origin, sharing the same IndexedDB
+
+### Validation
+- Ran `node -c app.js` → syntax valid
+
+---
+
 ## Known Limitations / Notes
 - OCR accuracy depends on image quality and contrast; values are always presented in editable fields before save.
 - PWA install prompt requires HTTPS and a supporting browser; fallback is manual "Add to Home Screen."

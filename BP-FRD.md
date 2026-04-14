@@ -397,9 +397,27 @@ Recommended sequencing for incremental build and testing:
   - If mismatch or fetch fails → badge turns **amber** with tooltip "Update available"
 - This allows users and testers to instantly verify whether the live site has received the latest pushed changes.
 
+## 16. App Update & Version Rollback
+
+### 16.1 Update Button
+- A dedicated **"App Update"** card is shown in **Settings**.
+- On opening Settings, the app fetches `versions.json` (cache-bypass) from the live site.
+- If a newer version exists, it displays:
+  - Current version → Latest version
+  - An **"Update Now"** button
+- Tapping **"Update Now"** unregisters all service workers, clears all caches, and reloads the root app (`./`). All IndexedDB data is preserved because it lives on the same origin.
+
+### 16.2 Version Archive (Rollback Safety)
+- The CI workflow archives every deployed version into a subfolder: `versions/vX.XX/`
+- A `versions.json` manifest on the root tracks the last 20 deployed versions with metadata: version number, path, commit SHA, date, and release notes.
+- In Settings, a **"Previous versions"** list shows all archived builds.
+- Each version entry has an **"Open"** link that loads that specific version.
+- **Critical:** Because all versions are served from the **same origin** (`comfac-global-group.github.io`), they share the same IndexedDB and `localStorage`. Opening an older version does **not** delete or isolate any user data.
+- This gives users a safe escape hatch: if a new release breaks something, they can immediately roll back to the last known-good version without losing logs, images, or profiles.
+
 ---
 
-## 16. Offline / Local Status
+## 17. Offline / Local Status
 
 ### 16.1 Status Indicator
 - A small **"Local / Offline"** pill appears in the header whenever `navigator.onLine === false`.
@@ -408,7 +426,7 @@ Recommended sequencing for incremental build and testing:
 
 ---
 
-## 17. Landing Instructions & Disclaimer
+## 18. Landing Instructions & Disclaimer
 
 ### 17.1 Home Screen Instruction Card
 - A dismissible card on the Home screen explains:
@@ -425,7 +443,7 @@ Recommended sequencing for incremental build and testing:
 
 ---
 
-## 18. Out of Scope — v2 Candidates
+## 19. Out of Scope — v2 Candidates
 
 | Feature | Notes |
 |---------|-------|

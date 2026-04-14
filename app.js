@@ -1183,6 +1183,7 @@ async function loadSettings() {
   document.getElementById('setting-physician').value = u?.physician_name || '';
   document.getElementById('settings-build-sha').textContent = APP_VERSION === 'dev' ? 'dev' : `${APP_VERSION} (${BUILD_SHA})`;
   document.getElementById('setting-dark-mode').checked = (localStorage.getItem('bplog_theme') === 'dark');
+  checkAppUpdate();
 }
 
 document.getElementById('btn-save-profile').addEventListener('click', async () => {
