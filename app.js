@@ -379,15 +379,29 @@ async function loadFileIntoOCR(file) {
   document.getElementById('ocr-tags').innerHTML = '';
   document.getElementById('ocr-brand').value = '';
   showScreen('ocr');
+  const hint = document.getElementById('ocr-hint');
+  hint.style.display = 'none';
   showLoading('Running OCR…');
   try {
     const values = await runOCR(dataUrl);
     if (values.sys) document.getElementById('ocr-sys').value = values.sys;
     if (values.dia) document.getElementById('ocr-dia').value = values.dia;
-    if (values.hr) document.getElementById('ocr-hr').value = values.hr;
+    if (values.hr)  document.getElementById('ocr-hr').value  = values.hr;
     if (values.brand) document.getElementById('ocr-brand').value = values.brand;
+    if (!values.sys && !values.dia) {
+      hint.style.display = 'block';
+      hint.style.background = '#fff3cd';
+      hint.style.color = '#856404';
+      hint.textContent = values.rawText
+        ? `OCR couldn't extract readings. Detected text: "${values.rawText.replace(/\s+/g,' ').trim().slice(0,120)}" — enter values manually.`
+        : 'No text detected in image. Try a clearer or closer photo, then enter values manually.';
+    }
   } catch (e) {
     console.error('OCR error', e);
+    hint.style.display = 'block';
+    hint.style.background = '#f8d7da';
+    hint.style.color = '#721c24';
+    hint.textContent = `OCR failed: ${e.message || 'unknown error'}. Enter values manually.`;
   }
   hideLoading();
 }
@@ -403,17 +417,27 @@ function blobToDataUrl(blob) {
 
 async function runOCR(dataUrl) {
   const canvas = await preprocessImage(dataUrl);
-  const result = await Tesseract.recognize(canvas.toDataURL('image/png'), 'eng', {
-    logger: m => { if (m.status === 'recognizing text') updateLoadingText(`OCR ${Math.round(m.progress*100)}%`); }
+  const worker = await Tesseract.createWorker('eng', 1, {
+    workerBlobURL: false,
+    logger: m => {
+      if      (m.status === 'loading tesseract core')       updateLoadingText('Loading OCR engine…');
+      else if (m.status === 'loading language traineddata') updateLoadingText('Loading language data…');
+      else if (m.status === 'recognizing text')             updateLoadingText(`OCR ${Math.round(m.progress * 100)}%`);
+    }
   });
-  const text = result.data.text;
-  const nums = text.match(/\b\d{2,3}\b/g) || [];
-  const brand = detectBrand(text);
-  if (nums.length >= 3) {
-    const n = nums.map(Number).sort((a,b) => b-a);
-    return { sys: n[0], dia: n[1], hr: n[2], brand };
+  try {
+    const result = await worker.recognize(canvas.toDataURL('image/png'));
+    const text   = result.data.text;
+    const nums   = text.match(/\b\d{2,3}\b/g) || [];
+    const brand  = detectBrand(text);
+    if (nums.length >= 3) {
+      const n = nums.map(Number).sort((a, b) => b - a);
+      return { sys: n[0], dia: n[1], hr: n[2], brand, rawText: text };
+    }
+    return { sys: null, dia: null, hr: null, brand, rawText: text };
+  } finally {
+    await worker.terminate();
   }
-  return { sys: null, dia: null, hr: null, brand };
 }
 
 function detectBrand(text) {
