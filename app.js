@@ -434,60 +434,92 @@ function blobToDataUrl(blob) {
 }
 
 async function runOCR(dataUrl) {
-  const canvas = await preprocessImage(dataUrl);
-  const worker = await Tesseract.createWorker('eng', 1, {
-    logger: m => {
-      if      (m.status === 'loading tesseract core')       updateLoadingText('Loading OCR engine…');
-      else if (m.status === 'loading language traineddata') updateLoadingText('Loading language data…');
-      else if (m.status === 'recognizing text')             updateLoadingText(`OCR ${Math.round(m.progress * 100)}%`);
-    }
-  });
-  try {
-    await worker.setParameters({
-      tessedit_char_whitelist: '0123456789',
-      tessedit_pageseg_mode: '11', // sparse text — finds scattered numbers across image
-    });
-    const result = await worker.recognize(canvas.toDataURL('image/png'));
-    const text   = result.data.text;
-    const brand  = detectBrand(text);
-    // Extract all digit runs (no merging — avoid joining unrelated numbers)
-    const allNums = (text.match(/\d+/g) || []).map(Number);
-    // Range-based extraction: use BP physiology to identify each value
-    const sys = allNums.find(n => n >= 90 && n <= 220) ?? null;
-    const dia = sys ? (allNums.find(n => n >= 50 && n <= 130 && n < sys) ?? null) : null;
-    const hr  = allNums.find(n => n >= 40 && n <= 180 && n !== sys && n !== dia) ?? null;
-    return { sys, dia, hr, brand, rawText: text };
-  } finally {
-    await worker.terminate();
+  // Try normal then inverted — LCD displays (light digits on dark) need inversion
+  updateLoadingText('Scanning image…');
+  const canvas1 = await preprocessForOCR(dataUrl, false);
+  const text1   = OCRAD(canvas1);
+  const result1 = extractBP(text1);
+  if (result1.sys && result1.dia) return { ...result1, rawText: text1 };
+
+  updateLoadingText('Retrying inverted…');
+  const canvas2 = await preprocessForOCR(dataUrl, true);
+  const text2   = OCRAD(canvas2);
+  const result2 = extractBP(text2);
+  if (result2.sys && result2.dia) return { ...result2, rawText: text2 };
+
+  // Return whichever pass found more
+  const best = (result2.sys || result2.dia) ? result2 : result1;
+  return { ...best, rawText: best === result2 ? text2 : text1 };
+}
+
+// ---- Multi-algorithm BP extraction ----------------------------------------
+function extractBP(text) {
+  const nums = (text.match(/\d+/g) || []).map(Number).filter(n => n >= 10 && n <= 300);
+
+  // A: explicit separator  "120/80"  "120|80"  common on some monitors
+  const sepMatch = text.match(/(\d{2,3})\s*[\/|\\]\s*(\d{2,3})/);
+  if (sepMatch) {
+    const a = +sepMatch[1], b = +sepMatch[2];
+    if (validPair(a, b)) return buildResult(a, b, nums, 'separator');
   }
+
+  // B: range + pulse-pressure check (sys−dia must be 20–100 mmHg)
+  const sysCands = nums.filter(n => n >= 90 && n <= 220).sort((a, b) => b - a);
+  const diaCands = nums.filter(n => n >= 50 && n <= 130).sort((a, b) => b - a);
+  for (const sys of sysCands) {
+    for (const dia of diaCands.filter(n => n < sys)) {
+      if (sys - dia >= 20 && sys - dia <= 100) return buildResult(sys, dia, nums, 'range+pp');
+    }
+  }
+
+  // C: range only — accept any plausible pair regardless of pulse pressure
+  const sys3 = sysCands[0] ?? null;
+  const dia3  = sys3 ? (diaCands.find(n => n < sys3) ?? null) : null;
+  if (sys3 && dia3) return buildResult(sys3, dia3, nums, 'range-only');
+
+  return { sys: null, dia: null, hr: null, brand: detectBrand(text), algo: null };
+}
+
+function validPair(sys, dia) {
+  return sys >= 90 && sys <= 220 && dia >= 50 && dia <= 130 && sys > dia && (sys - dia) >= 20 && (sys - dia) <= 100;
+}
+
+function buildResult(sys, dia, nums, algo) {
+  const hr    = nums.find(n => n >= 40 && n <= 180 && n !== sys && n !== dia) ?? null;
+  const brand = detectBrand(''); // brand detection less reliable with binary threshold
+  return { sys, dia, hr, brand, algo };
 }
 
 function detectBrand(text) {
   const t = text.toLowerCase();
-  if (t.includes('omron')) return 'Omron';
+  if (t.includes('omron'))     return 'Omron';
   if (t.includes('microlife')) return 'Microlife';
-  if (t.includes('a&d')) return 'A&D';
+  if (t.includes('a&d'))       return 'A&D';
   return null;
 }
+// ---------------------------------------------------------------------------
 
-async function preprocessImage(dataUrl) {
+async function preprocessForOCR(dataUrl, invert = false) {
   const img = new Image();
   img.src = dataUrl;
   await new Promise(r => img.onload = r);
   const canvas = document.createElement('canvas');
-  const max = 1200;
-  let w = img.naturalWidth, h = img.naturalHeight;
-  if (w > max || h > max) { const s = max / Math.max(w,h); w *= s; h *= s; }
+  // Scale UP for OCR — ocrad works better with larger images; cap at 2400px
+  const TARGET = 1800;
+  const scale  = Math.min(3, Math.max(1, TARGET / Math.max(img.naturalWidth, img.naturalHeight)));
+  const w = Math.round(img.naturalWidth  * scale);
+  const h = Math.round(img.naturalHeight * scale);
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d');
   ctx.drawImage(img, 0, 0, w, h);
-  const idata = ctx.getImageData(0,0,w,h);
+  const idata = ctx.getImageData(0, 0, w, h);
   const d = idata.data;
   for (let i = 0; i < d.length; i += 4) {
     const gray = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
-    const c = ((gray - 128) * 1.4) + 128;
-    const v = Math.max(0, Math.min(255, c));
+    // Binary threshold — ocrad needs clean black-on-white, not greyscale
+    const v = invert ? (gray < 128 ? 255 : 0) : (gray >= 128 ? 255 : 0);
     d[i] = d[i+1] = d[i+2] = v;
+    d[i+3] = 255;
   }
   ctx.putImageData(idata, 0, 0);
   return canvas;
