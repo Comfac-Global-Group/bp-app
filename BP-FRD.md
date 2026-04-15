@@ -518,7 +518,15 @@ Recommended sequencing for incremental build and testing:
 
 ---
 
-## 19. Out of Scope — v2 Candidates
+## 19. Planning Stage Features
+
+| Feature | Description | Status | Notes |
+|---------|-------------|--------|-------|
+| LLM-based Image Extraction | A way people can upload their BP pictures without any information for future filling up. Connect to a Model (either ollama, deepseek, openai) for image information extraction. Various prompts are used to look for SYS/DIA/BPM and then encoded. This is an option to toggle since the 7-step solution has a low chance of succeeding. | Open (datetime-deepseek) | We are in the planning stage. |
+
+---
+
+## 20. Out of Scope — v2 Candidates
 
 | Feature | Notes |
 |---------|-------|
