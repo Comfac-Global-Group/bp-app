@@ -386,6 +386,7 @@ async function loadFileIntoOCR(file) {
   document.getElementById('ocr-note').value = '';
   document.getElementById('ocr-tags').innerHTML = '';
   document.getElementById('ocr-brand').value = '';
+  document.getElementById('btn-ocr-rotate').textContent = '↻ Rotate & Re-scan';
   // Populate editable timestamp field
   document.getElementById('ocr-timestamp').value = toDatetimeLocal(timestamp);
   document.getElementById('ocr-ts-source').textContent = `(${tsSource})`;
@@ -394,7 +395,18 @@ async function loadFileIntoOCR(file) {
   hint.style.display = 'none';
   showLoading('Running OCR…');
   try {
-    const values = await runOCR(dataUrl);
+    // Pass 1: normal orientation only (fast)
+    let values = await runOCR(dataUrl, { rotations: [0] });
+
+    // Pass 2: if no valid reading, auto-try rotate90 silently
+    if (!values.sys || !values.dia) {
+      updateLoadingText('Trying rotated orientation…');
+      const rotated = await runOCR(dataUrl, { rotations: [90] });
+      if ((rotated.sys && rotated.dia) || (!values.sys && rotated.sys)) {
+        values = rotated;
+      }
+    }
+
     if (values.sys) document.getElementById('ocr-sys').value = values.sys;
     if (values.dia) document.getElementById('ocr-dia').value = values.dia;
     if (values.hr)  document.getElementById('ocr-hr').value  = values.hr;
@@ -412,8 +424,8 @@ async function loadFileIntoOCR(file) {
       hint.style.background = '#fff3cd';
       hint.style.color = '#856404';
       hint.textContent = values.rawText
-        ? `OCR couldn't extract readings. Detected text: "${values.rawText.replace(/\s+/g,' ').trim().slice(0,120)}" — enter values manually.`
-        : 'No text detected in image. Try a clearer or closer photo, then enter values manually.';
+        ? `OCR couldn't extract readings. Detected text: "${values.rawText.replace(/\s+/g,' ').trim().slice(0,120)}" — try rotating the image or enter values manually.`
+        : 'No text detected in image. Try a clearer or closer photo, or rotate the image, then enter values manually.';
     }
   } catch (e) {
     console.error('OCR error', e);
@@ -441,23 +453,44 @@ function blobToDataUrl(blob) {
   });
 }
 
-async function runOCR(dataUrl) {
-  // Pass 1: normal threshold
-  updateLoadingText('Scanning image…');
-  const canvas1 = await preprocessForOCR(dataUrl, false);
-  const text1   = OCRAD(canvas1);
-  const result1 = extractBP(text1);
-  // Pass 2: inverted — LCD displays (light digits on dark) need inversion
-  updateLoadingText('Scanning inverted…');
-  const canvas2 = await preprocessForOCR(dataUrl, true);
-  const text2   = OCRAD(canvas2);
-  const result2 = extractBP(text2);
-  // Pick the pass that scored higher (label > separator > range+pp > range-only > null)
-  const score   = r => ({ 'label-SYS/DIA': 4, separator: 3, 'range+pp': 2, 'range-only': 1 })[r.algo] ?? 0;
-  const best    = score(result1) >= score(result2) ? result1 : result2;
-  const bestTxt = best === result1 ? text1 : text2;
-  // Device detection runs on both passes combined for best text coverage
-  const { brand, model } = detectDevice(text1 + '\n' + text2);
+async function runOCR(dataUrl, options = {}) {
+  const rotations = options.rotations ?? [0];
+  const scoreMap = { 'label-SYS/DIA': 4, separator: 3, 'range+pp': 2, 'range-only': 1 };
+  const score = r => scoreMap[r.algo] ?? 0;
+
+  let best = null;
+  let bestTxt = '';
+  let allText = '';
+
+  for (const rotation of rotations) {
+    const rotLabel = rotation === 0 ? '' : ` (rotate ${rotation}°)`;
+    // Pass A: normal threshold
+    updateLoadingText(`Scanning${rotLabel}…`);
+    const canvasA = await preprocessForOCR(dataUrl, { invert: false, rotation });
+    const textA   = OCRAD(canvasA);
+    const resultA = extractBP(textA);
+    allText += textA + '\n';
+
+    // Pass B: inverted
+    updateLoadingText(`Scanning inverted${rotLabel}…`);
+    const canvasB = await preprocessForOCR(dataUrl, { invert: true, rotation });
+    const textB   = OCRAD(canvasB);
+    const resultB = extractBP(textB);
+    allText += textB + '\n';
+
+    // Pick best for this rotation
+    const bestRot = score(resultA) >= score(resultB) ? resultA : resultB;
+    const bestRotTxt = bestRot === resultA ? textA : textB;
+
+    if (!best || score(bestRot) > score(best)) {
+      best = bestRot;
+      bestTxt = bestRotTxt;
+    }
+    // Early exit if we got a label-based result (strongest signal)
+    if (best?.algo === 'label-SYS/DIA') break;
+  }
+
+  const { brand, model } = detectDevice(allText);
   return { ...best, brand, model, rawText: bestTxt };
 }
 
@@ -532,19 +565,34 @@ function detectDevice(text) {
 }
 // ---------------------------------------------------------------------------
 
-async function preprocessForOCR(dataUrl, invert = false) {
+async function preprocessForOCR(dataUrl, options = {}) {
+  const invert = options.invert ?? false;
+  const rotation = options.rotation ?? 0;
   const img = new Image();
   img.src = dataUrl;
   await new Promise(r => img.onload = r);
-  const canvas = document.createElement('canvas');
+
   // Scale UP for OCR — ocrad works better with larger images; cap at 2400px
   const TARGET = 1800;
   const scale  = Math.min(3, Math.max(1, TARGET / Math.max(img.naturalWidth, img.naturalHeight)));
-  const w = Math.round(img.naturalWidth  * scale);
-  const h = Math.round(img.naturalHeight * scale);
+  const srcW = Math.round(img.naturalWidth  * scale);
+  const srcH = Math.round(img.naturalHeight * scale);
+
+  // Apply rotation
+  const swap = rotation === 90 || rotation === 270;
+  const w = swap ? srcH : srcW;
+  const h = swap ? srcW : srcH;
+
+  const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0, w, h);
+
+  ctx.save();
+  ctx.translate(w / 2, h / 2);
+  ctx.rotate((rotation * Math.PI) / 180);
+  ctx.drawImage(img, -srcW / 2, -srcH / 2, srcW, srcH);
+  ctx.restore();
+
   const idata = ctx.getImageData(0, 0, w, h);
   const d = idata.data;
   for (let i = 0; i < d.length; i += 4) {
@@ -634,6 +682,43 @@ document.getElementById('btn-ocr-save').addEventListener('click', async () => {
   } else {
     showScreen('home');
   }
+});
+
+// Rotate & Re-scan button — cycles through 0→90→180→270→0
+let ocrRotation = 0;
+document.getElementById('btn-ocr-rotate').addEventListener('click', async () => {
+  if (!state.pendingImage) return;
+  ocrRotation = (ocrRotation + 90) % 360;
+  const rotLabel = ocrRotation === 0 ? '0°' : `${ocrRotation}°`;
+  document.getElementById('btn-ocr-rotate').textContent = `↻ Re-scan @ ${rotLabel}`;
+  showLoading(`Re-scanning @ ${rotLabel}…`);
+  const hint = document.getElementById('ocr-hint');
+  hint.style.display = 'none';
+  try {
+    const values = await runOCR(state.pendingImage.dataUrl, { rotations: [ocrRotation] });
+    if (values.sys) document.getElementById('ocr-sys').value = values.sys;
+    if (values.dia) document.getElementById('ocr-dia').value = values.dia;
+    if (values.hr)  document.getElementById('ocr-hr').value  = values.hr;
+    if (values.brand) document.getElementById('ocr-brand').value = values.brand;
+    if (values.sys && values.dia) {
+      hint.style.display = 'block';
+      hint.style.background = '#d4edda';
+      hint.style.color = '#155724';
+      hint.textContent = `Detected @ ${rotLabel}: ${values.sys}/${values.dia} HR:${values.hr} — review values below.`;
+    } else {
+      hint.style.display = 'block';
+      hint.style.background = '#fff3cd';
+      hint.style.color = '#856404';
+      hint.textContent = `No readings at ${rotLabel}. Try another rotation or enter manually.`;
+    }
+  } catch (e) {
+    console.error('OCR rotation error', e);
+    hint.style.display = 'block';
+    hint.style.background = '#f8d7da';
+    hint.style.color = '#721c24';
+    hint.textContent = `Re-scan failed: ${e.message || 'unknown error'}.`;
+  }
+  hideLoading();
 });
 
 // =================== Logs ===================

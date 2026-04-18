@@ -1,0 +1,151 @@
+{
+  "model": "gemma4:e2b",
+  "parameters": "5.1B, Q4_K_M, 131072 ctx",
+  "date": "2026-04-18T23:29:11.320935",
+  "ground_truth": {
+    "SYS": 118,
+    "DIA": 78,
+    "PULSE": 59
+  },
+  "prompt": "Blood pressure monitor display. Read SYS, DIA, PULSE. Only the 3 numbers, comma-separated.",
+  "results": [
+    {
+      "variant": "original",
+      "sys": 118,
+      "dia": 59,
+      "pulse": 8,
+      "match_level": "PARTIAL",
+      "correct_digits": 1
+    },
+    {
+      "variant": "contrast",
+      "sys": 118,
+      "dia": 88,
+      "pulse": 59,
+      "match_level": "PARTIAL",
+      "correct_digits": 2
+    },
+    {
+      "variant": "crop_lcd",
+      "sys": 110,
+      "dia": 80,
+      "pulse": 69,
+      "match_level": "NONE",
+      "correct_digits": 0
+    },
+    {
+      "variant": "crop_lcd_contrast",
+      "sys": 118,
+      "dia": 80,
+      "pulse": 59,
+      "match_level": "PARTIAL",
+      "correct_digits": 2
+    },
+    {
+      "variant": "crop_lcd_threshold",
+      "sys": 120,
+      "dia": 80,
+      "pulse": 59,
+      "match_level": "PARTIAL",
+      "correct_digits": 1
+    },
+    {
+      "variant": "grayscale",
+      "sys": 118,
+      "dia": 59,
+      "pulse": 8,
+      "match_level": "PARTIAL",
+      "correct_digits": 1
+    },
+    {
+      "variant": "inverted",
+      "sys": 118,
+      "dia": 59,
+      "pulse": 88,
+      "match_level": "PARTIAL",
+      "correct_digits": 1
+    },
+    {
+      "variant": "resize2x",
+      "sys": 118,
+      "dia": 89,
+      "pulse": 59,
+      "match_level": "PARTIAL",
+      "correct_digits": 2
+    },
+    {
+      "variant": "resize2x_contrast",
+      "sys": 118,
+      "dia": 59,
+      "pulse": 0,
+      "match_level": "PARTIAL",
+      "correct_digits": 1
+    },
+    {
+      "variant": "resize2x_threshold",
+      "sys": 108,
+      "dia": 59,
+      "pulse": 88,
+      "match_level": "NONE",
+      "correct_digits": 0
+    },
+    {
+      "variant": "rotate90",
+      "sys": 118,
+      "dia": 78,
+      "pulse": 59,
+      "match_level": "FULL_MATCH",
+      "correct_digits": 3
+    },
+    {
+      "variant": "rotate90_contrast",
+      "sys": 118,
+      "dia": 78,
+      "pulse": 59,
+      "match_level": "FULL_MATCH",
+      "correct_digits": 3
+    },
+    {
+      "variant": "rotate90_grayscale",
+      "sys": 118,
+      "dia": 78,
+      "pulse": 59,
+      "match_level": "FULL_MATCH",
+      "correct_digits": 3
+    },
+    {
+      "variant": "rotate90_sharpen",
+      "sys": 118,
+      "dia": 78,
+      "pulse": 59,
+      "match_level": "FULL_MATCH",
+      "correct_digits": 3
+    },
+    {
+      "variant": "sharpen",
+      "sys": 118,
+      "dia": 89,
+      "pulse": 59,
+      "match_level": "PARTIAL",
+      "correct_digits": 2
+    },
+    {
+      "variant": "threshold",
+      "sys": 108,
+      "dia": 59,
+      "pulse": null,
+      "match_level": "NONE",
+      "correct_digits": 0
+    }
+  ],
+  "summary": {
+    "total_variants_tested": 16,
+    "full_matches": 4,
+    "dia_matches": 4,
+    "sys_accuracy": "12/16",
+    "dia_accuracy": "4/16",
+    "pulse_accuracy": "9/16",
+    "best_variant": "rotate90 (and all rotate90 combos)",
+    "key_finding": "rotate90 preprocessing achieves 100% accuracy; model struggles with DIA=78 in standard orientation"
+  }
+}
