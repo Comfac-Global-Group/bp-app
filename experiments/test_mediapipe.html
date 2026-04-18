@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tier 0 — MediaPipe Text Recognition BP OCR Test</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #f5f7fa; }
+    h1 { font-size: 20px; margin-bottom: 8px; }
+    .subtitle { color: #666; font-size: 13px; margin-bottom: 20px; }
+    .controls { background: #fff; padding: 16px; border-radius: 10px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+    .controls label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: #444; }
+    .controls input[type="file"] { width: 100%; }
+    .controls button {
+      margin-top: 10px; padding: 10px 18px; border: none; border-radius: 8px;
+      background: #0d7377; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    .controls button:disabled { opacity: .5; cursor: not-allowed; }
+    .results { background: #fff; padding: 16px; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #eee; }
+    th { font-weight: 600; color: #555; background: #f8f9fa; }
+    .pass { color: #15803d; font-weight: 700; }
+    .fail { color: #c0392b; font-weight: 700; }
+    .partial { color: #f39c12; font-weight: 700; }
+    .preview { max-width: 120px; max-height: 90px; border-radius: 6px; }
+    .loading { color: #666; font-style: italic; }
+    .score { font-size: 18px; font-weight: 700; margin-top: 16px; padding: 12px; background: #f0f9ff; border-radius: 8px; }
+    #log { font-family: monospace; font-size: 12px; color: #666; margin-top: 12px; white-space: pre-wrap; }
+    .warn { background: #fff3cd; color: #856404; padding: 10px; border-radius: 6px; font-size: 13px; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <h1>🔬 Tier 0 — MediaPipe Text Recognition BP OCR Test</h1>
+  <div class="subtitle">Tests Google MediaPipe Tasks Vision text recognition on BP monitor photos.</div>
+
+  <div class="warn">
+    <strong>Note:</strong> MediaPipe downloads a ~10 MB WASM + model on first run. This may take 10-30 seconds.
+  </div>
+
+  <div class="controls">
+    <label>1. Select BP monitor photos (folder or multiple files):</label>
+    <input type="file" id="fileInput" multiple accept="image/*">
+    <br><br>
+    <label>2. Preprocessing:</label>
+    <label style="font-weight:400"><input type="checkbox" id="useRotate90"> Rotate 90°</label>
+    <label style="font-weight:400"><input type="checkbox" id="useGrayscale" checked> Grayscale</label>
+    <br>
+    <button id="runBtn" disabled>Run MediaPipe on all images</button>
+    <button id="exportBtn" style="display:none">Export JSON</button>
+  </div>
+
+  <div class="results">
+    <table>
+      <thead>
+        <tr>
+          <th>Image</th>
+          <th>Ground Truth</th>
+          <th>Detected Text</th>
+          <th>Extracted Numbers</th>
+          <th>Match</th>
+        </tr>
+      </thead>
+      <tbody id="resultsBody"></tbody>
+    </table>
+    <div id="scoreBox" style="display:none" class="score"></div>
+    <pre id="log"></pre>
+  </div>
+
+  <!-- MediaPipe Tasks Vision -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9/vision_bundle.js" crossorigin="anonymous"></script>
+
+  <script>
+    const fileInput = document.getElementById('fileInput');
+    const runBtn = document.getElementById('runBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const resultsBody = document.getElementById('resultsBody');
+    const scoreBox = document.getElementById('scoreBox');
+    const logBox = document.getElementById('log');
+
+    let allResults = [];
+    let textRecognizer = null;
+
+    fileInput.addEventListener('change', () => {
+      runBtn.disabled = fileInput.files.length === 0;
+    });
+
+    function log(msg) {
+      logBox.textContent += msg + '\n';
+    }
+
+    function parseGroundTruth(filename) {
+      const m = filename.match(/omron-(\d+)-(\d+)-(\d+)/);
+      if (m) return { sys: +m[1], dia: +m[2], pulse: +m[3] };
+      if (filename.includes('20260414_112450')) return { sys: 118, dia: 78, pulse: 59 };
+      return null;
+    }
+
+    function extractNumbers(text) {
+      return (text.match(/\b\d{2,3}\b/g) || []).map(Number);
+    }
+
+    function scoreNumbers(nums, gt) {
+      const hasSys = nums.includes(gt.sys);
+      const hasDia = nums.includes(gt.dia);
+      const hasPulse = nums.includes(gt.pulse);
+      const count = [hasSys, hasDia, hasPulse].filter(Boolean).length;
+      return { hasSys, hasDia, hasPulse, count, label: count === 3 ? 'pass' : count > 0 ? 'partial' : 'fail' };
+    }
+
+    function preprocessCanvas(sourceImg, opts) {
+      const canvas = document.createElement('canvas');
+      let w = sourceImg.naturalWidth || sourceImg.width;
+      let h = sourceImg.naturalHeight || sourceImg.height;
+      const swap = opts.rotate90;
+      canvas.width = swap ? h : w;
+      canvas.height = swap ? w : h;
+      const ctx = canvas.getContext('2d');
+
+      if (opts.rotate90) {
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate(90 * Math.PI / 180);
+        ctx.drawImage(sourceImg, -w / 2, -h / 2, w, h);
+      } else {
+        ctx.drawImage(sourceImg, 0, 0, w, h);
+      }
+
+      if (opts.grayscale) {
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = imgData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          d[i] = d[i + 1] = d[i + 2] = gray;
+        }
+        ctx.putImageData(imgData, 0, 0);
+      }
+
+      return canvas;
+    }
+
+    async function initMediaPipe() {
+      if (textRecognizer) return;
+      log('Loading MediaPipe model + WASM... (may take 10-30s)');
+      const { TextRecognizer, FilesetResolver } = window.vision;
+      const vision = await FilesetResolver.forVisionTasks(
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.9/wasm'
+      );
+      textRecognizer = await TextRecognizer.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/text_recognizer/english_text_recognizer/english_text_recognizer.tflite'
+        },
+        runningMode: 'IMAGE'
+      });
+      log('MediaPipe ready.');
+    }
+
+    async function runMediaPipeOnImage(file) {
+      const gt = parseGroundTruth(file.name);
+      if (!gt) return null;
+
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+      await new Promise(r => img.onload = r);
+
+      const opts = {
+        rotate90: document.getElementById('useRotate90').checked,
+        grayscale: document.getElementById('useGrayscale').checked
+      };
+
+      const canvas = preprocessCanvas(img, opts);
+
+      const result = textRecognizer.recognize(canvas);
+      const detectedText = result.text || '';
+      const nums = extractNumbers(detectedText);
+      const score = scoreNumbers(nums, gt);
+
+      return {
+        engine: 'mediapipe',
+        filename: file.name,
+        groundTruth: gt,
+        rawText: detectedText,
+        numbers: nums,
+        score: score,
+        confidence: null
+      };
+    }
+
+    runBtn.addEventListener('click', async () => {
+      runBtn.disabled = true;
+      resultsBody.innerHTML = '';
+      scoreBox.style.display = 'none';
+      logBox.textContent = '';
+      allResults = [];
+
+      const files = Array.from(fileInput.files).filter(f => f.type.startsWith('image/'));
+      log(`Processing ${files.length} images...`);
+
+      try {
+        await initMediaPipe();
+      } catch (e) {
+        log(`Failed to load MediaPipe: ${e.message}`);
+        runBtn.disabled = false;
+        return;
+      }
+
+      for (const file of files) {
+        const row = document.createElement('tr');
+        row.innerHTML = `<td colspan="5" class="loading">Processing ${file.name}...</td>`;
+        resultsBody.appendChild(row);
+
+        try {
+          const res = await runMediaPipeOnImage(file);
+          if (!res) {
+            row.innerHTML = `<td colspan="5">Skipped ${file.name} (no ground truth)</td>`;
+            continue;
+          }
+
+          allResults.push(res);
+          const imgUrl = URL.createObjectURL(file);
+          const cls = res.score.label;
+          row.innerHTML = `
+            <td><img src="${imgUrl}" class="preview"></td>
+            <td>${res.groundTruth.sys}/${res.groundTruth.dia}/${res.groundTruth.pulse}</td>
+            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${res.rawText.replace(/"/g, '&quot;')}">${res.rawText.slice(0, 60)}</td>
+            <td>[${res.numbers.join(', ')}]</td>
+            <td class="${cls}">${cls.toUpperCase()} (${res.score.count}/3)</td>
+          `;
+        } catch (e) {
+          row.innerHTML = `<td colspan="5" class="fail">Error on ${file.name}: ${e.message}</td>`;
+        }
+      }
+
+      const total = allResults.length * 3;
+      const correct = allResults.reduce((s, r) => s + r.score.count, 0);
+      const fullMatch = allResults.filter(r => r.score.count === 3).length;
+      const partial = allResults.filter(r => r.score.count > 0 && r.score.count < 3).length;
+      const none = allResults.filter(r => r.score.count === 0).length;
+
+      scoreBox.innerHTML = `
+        <strong>MediaPipe Results</strong><br>
+        Images: ${allResults.length} &nbsp;|&nbsp;
+        Full match: ${fullMatch} &nbsp;|&nbsp;
+        Partial: ${partial} &nbsp;|&nbsp;
+        None: ${none} &nbsp;|&nbsp;
+        Digit accuracy: ${correct}/${total} = ${(correct / total * 100).toFixed(1)}%
+      `;
+      scoreBox.style.display = 'block';
+      exportBtn.style.display = 'inline-block';
+      runBtn.disabled = false;
+
+      log(`Done. Digit accuracy: ${correct}/${total}`);
+    });
+
+    exportBtn.addEventListener('click', () => {
+      const blob = new Blob([JSON.stringify(allResults, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'mediapipe_results.json';
+      a.click();
+    });
+  </script>
+</body>
+</html>

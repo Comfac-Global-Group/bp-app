@@ -1,0 +1,47 @@
+{
+  "images": [
+    {
+      "filename": "Bloodpressure Samples/20260409_215943-omron-135-82-73.jpg",
+      "basename": "20260409_215943-omron-135-82-73.jpg",
+      "sys": 135,
+      "dia": 82,
+      "pulse": 73
+    },
+    {
+      "filename": "Bloodpressure Samples/20260410_120217-omron-134-90-61.jpg",
+      "basename": "20260410_120217-omron-134-90-61.jpg",
+      "sys": 134,
+      "dia": 90,
+      "pulse": 61
+    },
+    {
+      "filename": "Bloodpressure Samples/20260411_195510-omron-128-75-85.jpg",
+      "basename": "20260411_195510-omron-128-75-85.jpg",
+      "sys": 128,
+      "dia": 75,
+      "pulse": 85
+    },
+    {
+      "filename": "Bloodpressure Samples/20260413_201728-omron-149-86-75.jpg",
+      "basename": "20260413_201728-omron-149-86-75.jpg",
+      "sys": 149,
+      "dia": 86,
+      "pulse": 75
+    },
+    {
+      "filename": "Bloodpressure Samples/20260414_112450-omron-118-78-59.jpg",
+      "basename": "20260414_112450-omron-118-78-59.jpg",
+      "sys": 118,
+      "dia": 78,
+      "pulse": 59
+    },
+    {
+      "filename": "20260414_112450.jpg",
+      "basename": "20260414_112450.jpg",
+      "sys": 118,
+      "dia": 78,
+      "pulse": 59
+    }
+  ],
+  "count": 6
+}
