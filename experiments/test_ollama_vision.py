@@ -53,7 +53,7 @@ VARIANTS = {
 
 def parse_ground_truth(filename):
     """Extract SYS/DIA/PULSE from filename like 20260414_112450-omron-118-78-59.jpg"""
-    m = re.search(r"omron-(\d+)-(\d+)-(\d+)", filename)
+    m = re.search(r"omron[\s-](\d+)[\s-](\d+)[\s-](\d+)", filename)
     if m:
         return {"sys": int(m.group(1)), "dia": int(m.group(2)), "pulse": int(m.group(3))}
     if "20260414_112450" in filename:
@@ -179,7 +179,8 @@ def main():
 
     for img_path in images:
         gt = parse_ground_truth(img_path.name)
-        print(f"\n📷 {img_path.name} (GT: {gt['sys']}/{gt['dia']}/{gt['pulse'] if gt else '?'})")
+        gt_str = f"{gt['sys']}/{gt['dia']}/{gt['pulse']}" if gt else "?"
+        print(f"\n📷 {img_path.name} (GT: {gt_str})")
 
         for vname, vfn in variants.items():
             result = run_variant(args.model, img_path, vname, vfn)
