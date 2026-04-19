@@ -29,6 +29,7 @@ python3 -m http.server 8080
 | [`test_mediapipe.html`](test_mediapipe.html) | MediaPipe Text Recognition | Browser — ~10 MB model download on first run |
 | [`test-ocr-browser.html`](test-ocr-browser.html) | Tesseract.js vs ocrad.js | Browser — side-by-side A/B comparison |
 | [`test-7segment-template.html`](test-7segment-template.html) | **7-segment template matching** | Browser — pure JS canvas math, no external deps |
+| [`test_ollama_vision.py`](test_ollama_vision.py) | **Ollama vision models** | Python — benchmark any Ollama vision model with preprocessing variants |
 
 ### Node.js / Python Test Harnesses
 
