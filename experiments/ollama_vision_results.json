@@ -1,0 +1,33 @@
+{
+  "model": "qwen3.5-4b-instruct:latest",
+  "total_runs": 1,
+  "full_matches": 1,
+  "results": [
+    {
+      "variant": "rotate90",
+      "raw_text": "118,78,59",
+      "nums": [
+        118,
+        78,
+        59
+      ],
+      "ground_truth": {
+        "sys": 118,
+        "dia": 78,
+        "pulse": 59
+      },
+      "score": {
+        "label": "FULL_MATCH",
+        "matches": 3,
+        "nums": [
+          118,
+          78,
+          59
+        ]
+      },
+      "duration_sec": 51.08,
+      "ollama_duration_ms": 51060.5,
+      "image": "20260414_112450.jpg"
+    }
+  ]
+}

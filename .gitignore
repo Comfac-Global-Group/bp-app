@@ -8,3 +8,5 @@ experiments/*.traineddata
 experiments/tesseract_results.json
 experiments/mediapipe_results.json
 experiments/gemini_results.json
+experiments/ollama_vision_results.json
+experiments/*_results.json

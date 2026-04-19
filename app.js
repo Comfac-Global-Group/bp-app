@@ -25,6 +25,33 @@ const state = {
 
 const PALETTE = ['#0d7377','#14a085','#2ecc71','#3498db','#9b59b6','#e74c3c','#f39c12','#1abc9c'];
 
+const DEFAULT_CATEGORY_COLORS = {
+  'Normal':    { bg: '#d4edda', text: '#155724' },
+  'Elevated':  { bg: '#fff3cd', text: '#856404' },
+  'Stage 1':   { bg: '#ffeeba', text: '#856404' },
+  'Stage 2':   { bg: '#f8d7da', text: '#721c24' },
+  'Crisis':    { bg: '#721c24', text: '#fff' },
+};
+
+function getCategoryColors() {
+  try {
+    const saved = localStorage.getItem('bplog_category_colors');
+    if (saved) return { ...DEFAULT_CATEGORY_COLORS, ...JSON.parse(saved) };
+  } catch {}
+  return { ...DEFAULT_CATEGORY_COLORS };
+}
+
+function getShowLabels() {
+  return localStorage.getItem('bplog_show_labels') === 'true';
+}
+
+function renderBadge(cat, text) {
+  const colors = getCategoryColors();
+  const style = colors[cat] || DEFAULT_CATEGORY_COLORS[cat] || DEFAULT_CATEGORY_COLORS['Normal'];
+  const label = getShowLabels() ? ` <small style="opacity:.8">${cat}</small>` : '';
+  return `<span class="badge" style="background:${style.bg};color:${style.text};border:1px solid ${style.text}22">${text}${label}</span>`;
+}
+
 // =================== Theme ===================
 function applyTheme() {
   const theme = localStorage.getItem('bplog_theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
@@ -300,7 +327,7 @@ function entryRowHTML(e) {
       <div class="entry-body">
         <div class="entry-meta">${fmtDate(e.timestamp)}</div>
         <div class="entry-values">
-          <span class="badge ${badgeClass(e.bp_category)}">${e.systolic}/${e.diastolic}</span>
+          ${renderBadge(e.bp_category, `${e.systolic}/${e.diastolic}`)}
           <span class="badge">${e.heart_rate} bpm</span>
         </div>
         <div class="tag-list">${tags}</div>
@@ -1337,8 +1364,108 @@ async function loadSettings() {
   document.getElementById('setting-physician').value = u?.physician_name || '';
   document.getElementById('settings-build-sha').textContent = APP_VERSION === 'dev' ? 'dev' : `${APP_VERSION} (${BUILD_SHA})`;
   document.getElementById('setting-dark-mode').checked = (localStorage.getItem('bplog_theme') === 'dark');
+  loadAccessibilitySettings();
   checkAppUpdate();
 }
+
+function loadAccessibilitySettings() {
+  const colors = getCategoryColors();
+  document.getElementById('setting-show-labels').checked = getShowLabels();
+  const container = document.getElementById('category-colors-list');
+  container.innerHTML = '';
+  Object.keys(DEFAULT_CATEGORY_COLORS).forEach(cat => {
+    const c = colors[cat] || DEFAULT_CATEGORY_COLORS[cat];
+    const row = document.createElement('div');
+    row.className = 'color-row';
+    row.innerHTML = `
+      <label>${cat}</label>
+      <input type="color" data-cat="${cat}" data-type="bg" value="${c.bg}" title="Background" />
+      <input type="color" data-cat="${cat}" data-type="text" value="${c.text}" title="Text" />
+      <span class="color-preview" style="background:${c.bg};color:${c.text}">120/80</span>
+    `;
+    container.appendChild(row);
+  });
+  container.querySelectorAll('input[type="color"]').forEach(input => {
+    input.addEventListener('input', updateColorPreview);
+  });
+}
+
+function updateColorPreview(e) {
+  const cat = e.target.dataset.cat;
+  const type = e.target.dataset.type;
+  const row = e.target.closest('.color-row');
+  const preview = row.querySelector('.color-preview');
+  if (type === 'bg') preview.style.background = e.target.value;
+  else preview.style.color = e.target.value;
+}
+
+function saveCategoryColors() {
+  const colors = {};
+  document.querySelectorAll('#category-colors-list .color-row').forEach(row => {
+    const cat = row.querySelector('label').textContent;
+    const bg = row.querySelector('input[data-type="bg"]').value;
+    const text = row.querySelector('input[data-type="text"]').value;
+    colors[cat] = { bg, text };
+  });
+  localStorage.setItem('bplog_category_colors', JSON.stringify(colors));
+}
+
+document.getElementById('setting-show-labels').addEventListener('change', (e) => {
+  localStorage.setItem('bplog_show_labels', e.target.checked ? 'true' : 'false');
+  loadData();
+});
+
+document.getElementById('btn-reset-colors').addEventListener('click', () => {
+  localStorage.removeItem('bplog_category_colors');
+  loadAccessibilitySettings();
+  loadData();
+});
+
+document.getElementById('btn-export-colors').addEventListener('click', () => {
+  const data = {
+    exported_at: new Date().toISOString(),
+    show_labels: getShowLabels(),
+    colors: getCategoryColors(),
+  };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `bplog-colors-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('btn-import-colors').addEventListener('click', () => {
+  document.getElementById('import-colors-file').click();
+});
+
+document.getElementById('import-colors-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const data = JSON.parse(text);
+    if (data.colors) {
+      localStorage.setItem('bplog_category_colors', JSON.stringify(data.colors));
+    }
+    if (typeof data.show_labels === 'boolean') {
+      localStorage.setItem('bplog_show_labels', data.show_labels ? 'true' : 'false');
+    }
+    loadAccessibilitySettings();
+    loadData();
+    alert('Color settings imported successfully');
+  } catch (err) {
+    alert('Failed to import color settings: ' + err.message);
+  }
+  e.target.value = '';
+});
+
+// Auto-save colors when leaving settings screen or on change
+document.getElementById('category-colors-list').addEventListener('change', () => {
+  saveCategoryColors();
+  loadData();
+});
 
 document.getElementById('btn-save-profile').addEventListener('click', async () => {
   const u = state.users.find(x => x.id === state.currentUserId);

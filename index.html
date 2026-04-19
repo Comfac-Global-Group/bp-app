@@ -264,6 +264,22 @@
         </div>
 
         <div class="card">
+          <div class="card-title">Accessibility</div>
+          <label class="flex gap-2" style="align-items:center; margin-bottom:8px;">
+            <input type="checkbox" id="setting-show-labels" />
+            <span>Always show category labels</span>
+          </label>
+          <div class="text-muted" style="font-size:12px; margin-bottom:8px;">Customize colors for each BP category:</div>
+          <div id="category-colors-list"></div>
+          <div class="flex gap-2 mt-2">
+            <button class="btn btn-secondary" id="btn-reset-colors">Reset Default</button>
+            <button class="btn btn-secondary" id="btn-export-colors">Export</button>
+            <button class="btn btn-secondary" id="btn-import-colors">Import</button>
+          </div>
+          <input type="file" id="import-colors-file" accept=".json" style="display:none" />
+        </div>
+
+        <div class="card">
           <div class="card-title">App Update</div>
           <div id="update-status" class="text-muted">Checking…</div>
           <button class="btn btn-primary btn-block mt-2" id="btn-check-update" style="display:none">Check for Updates</button>
