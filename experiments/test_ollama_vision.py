@@ -68,7 +68,7 @@ def encode_image(img):
     return base64.b64encode(buf.getvalue()).decode()
 
 
-def ollama_generate(model, prompt, image_b64, timeout=120):
+def ollama_generate(model, prompt, image_b64, timeout=300):
     """Send image + prompt to Ollama and return response text."""
     payload = {
         "model": model,

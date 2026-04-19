@@ -19,6 +19,7 @@ We tested **two fundamentally different approaches** to reading 7-segment LCD di
 | **Vision LLM** | **qwen3.5-4b-instruct** | **3.4GB** | **1/1*** | **100%*** | ~50s | rotate90 |
 | **Vision LLM** | **gemma4:e2b** | **7.2GB** | **4/4** | **100%** | ~30s | rotate90 |
 | **Vision LLM** | **medgemma:latest** | **3.3GB** | **13/42** | **31%** | ~7s | contrast (original) |
+| Vision LLM | **qwen3.5:0.8b** | **1.0GB** | **10/42** | **23.8%** | ~5s | original/contrast |
 | Vision LLM | qwen3-vl:2b | 1.9GB | ~5/42 | ~12% | ~15s | rotate90 |
 | **Vision LLM** | **glm-ocr:latest** | **2.2GB** | **0/42** | **0%** | ~7s | — |
 | Traditional | Tesseract.js | — | **0/11** | **0%** | ~3s | — |
@@ -27,7 +28,7 @@ We tested **two fundamentally different approaches** to reading 7-segment LCD di
 
 \* Only tested on 1 image so far. Full 7-image sweep pending.
 
-**Key Discovery:** `rotate90` preprocessing is the critical unlock for vision models. When images are rotated 90°, 7-segment digits become readable to Qwen and Gemma models. Without rotation, even large models fail.
+**Key Discovery:** `rotate90` preprocessing is the critical unlock for **larger** vision models (Qwen 3.5 4B, Gemma 4). However, **smaller models** (Qwen 3.5 0.8B, MedGemma) actually work **better on original orientation**. Model size determines the optimal preprocessing strategy.
 
 ---
 
@@ -110,7 +111,41 @@ A pure-JavaScript implementation in `test-7segment-template.html` that:
 
 ---
 
-### Model 3: medgemma:latest (3.3GB) — FASTEST, NO ROTATION NEEDED
+### Model 3: qwen3.5:0.8b (1.0GB) — SMALLEST VIABLE MODEL
+
+The smallest tested model. Surprisingly, it behaves like MedGemma (works on original orientation) rather than the larger Qwen 3.5 4B (needs rotate90).
+
+#### Per-Image Breakdown (all 6 variants)
+
+| Image | GT | original | rotate90 | contrast | threshold | r90_contrast | r90_threshold |
+|-------|-----|----------|----------|----------|-----------|--------------|---------------|
+| 20260409_215943 | 135/82/73 | ✅ FULL | NO_MATCH | ✅ FULL | NO_EXTRACT | PARTIAL | NO_MATCH |
+| 20260410_120217 | 134/90/61 | ✅ FULL | NO_MATCH | ✅ FULL | NO_EXTRACT | NO_MATCH | NO_EXTRACT |
+| 20260411_195510 | 128/75/85 | SYS+DIA | NO_MATCH | SYS+DIA | NO_EXTRACT | NO_MATCH | NO_EXTRACT |
+| 20260413_201728 | 149/86/75 | ✅ FULL | PARTIAL | ✅ FULL | NO_EXTRACT | NO_EXTRACT | NO_EXTRACT |
+| 20260414_112450 | 118/78/59 | ✅ FULL | NO_MATCH | ✅ FULL | PARTIAL | NO_EXTRACT | NO_EXTRACT |
+| 20260418_230638 | 128/79/62 | NO_MATCH | PARTIAL | NO_MATCH | NO_MATCH | PARTIAL | NO_MATCH |
+| 20260414_112450.jpg | 118/78/59 | NO_EXTRACT | ✅ FULL | NO_MATCH | NO_EXTRACT | ✅ FULL | PARTIAL |
+
+**FULL_MATCH by variant:**
+- original: 4/7 (57%)
+- rotate90: 1/7 (14%)
+- contrast: 4/7 (57%) ← **Best**
+- threshold: 0/7 (0%)
+- rotate90_contrast: 1/7 (14%)
+- rotate90_threshold: 0/7 (0%)
+
+**Total: 10/42 FULL_MATCH (23.8%)**
+
+**Key insight:** The 0.8B model is **worse at handling rotation** than the 4B model. It reads 7-segment digits correctly in original orientation but gets confused when rotated. The one image that *does* need rotation (20260414_112450.jpg) works with rotate90, suggesting the model has some rotation capability but it's inconsistent.
+
+**Best strategy:** Try `original` first, then `contrast`. If both fail, try `rotate90` as fallback.
+
+**Speed:** ~5s per image for successful variants, but threshold variants can take 85-135s (likely struggling to produce coherent output).
+
+---
+
+### Model 4: medgemma:latest (3.3GB) — FASTEST, NO ROTATION NEEDED
 
 The surprise performer. Unlike Qwen and Gemma, MedGemma reads 7-segment digits correctly in **original orientation**.
 
@@ -142,7 +177,7 @@ The surprise performer. Unlike Qwen and Gemma, MedGemma reads 7-segment digits c
 
 ---
 
-### Model 4: qwen3-vl:2b (1.9GB)
+### Model 5: qwen3-vl:2b (1.9GB)
 
 | Image | GT | rotate90 | Result |
 |-------|-----|----------|--------|
@@ -152,7 +187,7 @@ The surprise performer. Unlike Qwen and Gemma, MedGemma reads 7-segment digits c
 
 ---
 
-### Model 5: glm-ocr:latest (2.2GB) — COMPLETE FAILURE
+### Model 6: glm-ocr:latest (2.2GB) — COMPLETE FAILURE
 
 Returns the exact same hallucinated text for **every image**, regardless of input:
 
@@ -169,9 +204,9 @@ Returns the exact same hallucinated text for **every image**, regardless of inpu
 
 ## Key Discoveries
 
-1. **rotate90 is critical for Qwen/Gemma:** These models read 7-segment LCD accurately only when rotated 90°. Without rotation, even 7B models fail. The digits become more "natural" to the model's training distribution when rotated.
+1. **rotate90 is critical for LARGER Qwen/Gemma models:** The 4B and 7B models read 7-segment LCD accurately only when rotated 90°. The digits become more "natural" to their training distribution when rotated.
 
-2. **MedGemma is the exception:** The only model that reads 7-segment displays in original orientation. Likely due to medical imaging training including digital displays.
+2. **Smaller models prefer original orientation:** Both qwen3.5:0.8b and MedGemma read 7-segment displays better in original orientation. These smaller models appear to have been trained more heavily on digital display images in their natural orientation.
 
 3. **Threshold preprocessing universally hurts:** Every model performs worse with binary thresholding. Contrast enhancement helps MedGemma but not others.
 
@@ -190,7 +225,8 @@ Returns the exact same hallucinated text for **every image**, regardless of inpu
 | **1st** | Vision LLM | qwen3.5-4b-instruct + rotate90 | Perfect accuracy, reasonable 3.4GB size |
 | **2nd** | Vision LLM | gemma4:e2b + rotate90 | Perfect accuracy, but 2× size |
 | **3rd** | Vision LLM | medgemma + contrast | Fastest (~7s), no rotation, ~71% per-image |
-| **4th** | Browser JS | 7-segment template | Zero server cost, ~80% with manual ROI |
+| **4th** | Vision LLM | qwen3.5:0.8b + original | Smallest at 1.0GB, ~57% per-image, ~5s |
+| **5th** | Browser JS | 7-segment template | Zero server cost, ~80% with manual ROI |
 | **Avoid** | Traditional OCR | Tesseract.js / ocrad.js | 0% success rate |
 | **Avoid** | Vision LLM | glm-ocr | 0% success rate |
 
@@ -216,7 +252,7 @@ python3 test_ollama_vision.py --model <model> --all-samples
 
 ## Pending Tests
 
-- [ ] **qwen3.5:0.8b** (1.0GB) — pulled, awaiting benchmark
+- [x] **qwen3.5:0.8b** (1.0GB) — **10/42 FULL_MATCH (23.8%)** — works on original orientation
 - [ ] **qwen3.5-4b-instruct** — full 7-image sweep to confirm consistency
 - [ ] **deepseek-ocr:3b** — download in progress
 - [ ] **granite3.2-vision** — IBM's vision model
