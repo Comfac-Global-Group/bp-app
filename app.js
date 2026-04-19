@@ -1653,6 +1653,60 @@ function handleUrlShortcuts() {
   }
 }
 
+// =================== Window Management ===================
+function initCardMinimize() {
+  document.querySelectorAll('.card').forEach(card => {
+    const title = card.querySelector('.card-title');
+    if (!title) return;
+    // Skip cards that are too small or inside OCR/detail screens
+    if (card.closest('#screen-ocr') || card.closest('#screen-detail')) return;
+
+    const btn = document.createElement('button');
+    btn.className = 'btn-minimize';
+    btn.innerHTML = '−';
+    btn.title = 'Minimize';
+    title.appendChild(btn);
+
+    // Restore state
+    const key = 'bplog_card_' + (card.closest('section')?.id || 'global') + '_' + (title.textContent?.trim() || 'card');
+    if (localStorage.getItem(key) === 'collapsed') {
+      card.classList.add('collapsed');
+      btn.innerHTML = '+';
+    }
+
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const collapsed = card.classList.toggle('collapsed');
+      btn.innerHTML = collapsed ? '+' : '−';
+      localStorage.setItem(key, collapsed ? 'collapsed' : 'expanded');
+    });
+  });
+}
+
+function initScreenCloseButtons() {
+  document.querySelectorAll('.screen').forEach(screen => {
+    if (screen.id === 'screen-home') return;
+    const btn = document.createElement('button');
+    btn.className = 'btn-screen-close';
+    btn.innerHTML = '×';
+    btn.title = 'Close';
+    btn.addEventListener('click', () => showScreen('home'));
+    screen.appendChild(btn);
+  });
+}
+
+// Modal dismiss on overlay click or Escape
+document.getElementById('modal-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'modal-overlay') {
+    document.getElementById('modal-overlay').classList.remove('active');
+  }
+});
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    document.getElementById('modal-overlay').classList.remove('active');
+  }
+});
+
 // =================== Init ===================
 (async () => {
   await initDB();
@@ -1665,4 +1719,6 @@ function handleUrlShortcuts() {
   initLandingCard();
   initDisclaimer();
   handleUrlShortcuts();
+  initCardMinimize();
+  initScreenCloseButtons();
 })();
