@@ -1,0 +1,1150 @@
+[
+  {
+    "variant": "original",
+    "tesseract": {
+      "engine": "Tesseract.js",
+      "variant": "original",
+      "text": ". i r 3 Ff 29 CRN Yad pe\nbe a fo, & SH g p J\nE _ = pi ; :\n4 BE 4 b ERR or ES\n3 = % k NBT CERN ven o\n——————— N\\\n. -\n-~ -\n- n\n) A\ni\n— | 5\nHE 4 ’\nhe L}\ni \\\n\\\n3\ni hg ha 2 POT ee - . “ ;\nca i i\nad a p 3 . 1 -\n& F o> Eo 3 '\nNn —\nie E j\nLo 3 >» Cee :\n= ks mg = di\nA fi Of Ere RAT\n: ee\nfe A\n4 Fo is\nChee SA\ni EE gt GabEdy A\n1 2 Bel ‘. Awe -\nSel eR Ry : !\n\ni q RC RR Fy ’\nTe He Boy i i\nTia 25 f Lo Ee A £ °\nale FE a f=\n\na CE ee hg\nog ATR eS El x :\ni: Ca oh ;\n> a AR 2\n; ’ EE 1\nag Ge ; = \\\naE SE 4 1\nCE es EE\nEE |\nkl\n-_— E —————\n— i f I~ ER) —\nSc = £\nca i\n. E —\n— 7) :\n= | :\n:\nQo. |\ni\n. 3\nfi - 4 2\na )\n",
+      "confidence": 29,
+      "words": [],
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": [
+              "29",
+              "25"
+            ]
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    },
+    "ocrad": {
+      "engine": "ocrad.js",
+      "variant": "original",
+      "text": "",
+      "error": "Cannot read properties of undefined (reading 'width')",
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": []
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "variant": "grayscale",
+    "tesseract": {
+      "engine": "Tesseract.js",
+      "variant": "grayscale",
+      "text": "E Fa J\nI. = 4 / Bh TEEN\n) RE Ee 1 : ¢ ; 4\na Bo 1 2 3 5\n5: LisiErd :\nix Fg\" ;\n1 bh § 3 = 7 Nase ong - g aes 3 Te\n; A ARERR AG ES\n4 E 1 a. 5 2 5\ney\n3 . ining I N - : 5 :\n. . - oF h\na : = i\n4 > . - 7 > 4\n\\ ee\n\\ ens\n- 4 i \\ =\n: & :\n2% n i p— ’ ; :\nhea y i\nre : p_— rr 1 7\noO -— IT i\nr 3 1\n3 I bE i.\n> Ei aii |\nEo 1\nbe 4\n, Ee . ad | 3 %\n. je\nCS £5 FTN ok all |= |\nTEE Na ]\nSa Pr ie 1 al |\nSe Ea\n: par - 4 he 3\nBe no “ a i -\na EE : : |\npty E a Ss Se : 3 x\non wel Cais Se 4\nSE - Ee 8\n@ FOE Ger E\ngo fe i’\nFrit SU ;\nf PS Ee Sa Ce E ain\n3 Za SR Masa isi dailies Las\ni oy\n— VU) IT 4 = y\n- 9 I = .\n= 7) ~ [52 £ p' !\n1 ts UNE Q |\nCe c = Sw.\nid Sa je\nalse ) | :\nSata\nie 7S 3 i\nRE\n5 ei |\nEL i\nEe\n°S J 2 ey i\nea Ret Sal : <\n5 E Rag IN age\n= we a ! ’\n",
+      "confidence": 32,
+      "words": [],
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": [
+              "52"
+            ]
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": [
+              52
+            ]
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": [
+              52
+            ]
+          }
+        }
+      ]
+    },
+    "ocrad": {
+      "engine": "ocrad.js",
+      "variant": "grayscale",
+      "text": "",
+      "error": "Cannot read properties of undefined (reading 'width')",
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": []
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "variant": "contrast",
+    "tesseract": {
+      "engine": "Tesseract.js",
+      "variant": "contrast",
+      "text": "oy 4 FA (oy 5, .\nBes uy Er jo, Toy ee ey\nEs Ag Y' / J a\noo Eo =\noo sa a k ;\n& a : :\ni 3 $5 4 3 oo Gsie a . dil:\n] i J Eo ae faa »\ni bh — 3 —_— \" a | TR\n4 E = - CET SRG SR Sls Tat a\n: 1 : % ¥ ;\n% «\n3 de un 5\nF : ) —————— \\ §\n-~ \" “=, - F &\nEe\n_— \\\nF [J \\ w\n. Z \\ %\n4 : 4 5\n= 1 {\n. ; { \\ )\n; { \\\n3 a\n\" : \\ ¥\npo eo aa RAs TIE Jr » .\n— EF : Sa 1 - 1\nJ — f ~ 4 <5) 3\nBe i\nE l\n| =~ BE is\nE\n- %\nE t &\n’ pL i ] be ’\n- So :\n~ we |\ntl a |\nE Lee hr\nfi Seog EVE\nf dag oo 1 al\nFE Fa |\na E hon\nGe Eo £ a \\ ;\nEo aE ae |\nRR Eo Eb\nof Eo - eo Eb\n‘ So ie = \\\na Cred 4\nPa CoE a\nas SE i ree Se .\nBt bd b\n4 |\n. — J ) XI oO [ cam Y ;\n—y <{ T LL] —\n— 7) 5 ’\na = Vp N=\n: c\n] eS = — |\na i\nEL ae 4 | .\nTL :\nLT i |\nse 2 i : |\nFo 1 ; urd\na a  - - £\n",
+      "confidence": 30,
+      "words": [],
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": []
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    },
+    "ocrad": {
+      "engine": "ocrad.js",
+      "variant": "contrast",
+      "text": "",
+      "error": "Cannot read properties of undefined (reading 'width')",
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": []
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "variant": "inverted",
+    "tesseract": {
+      "engine": "Tesseract.js",
+      "variant": "inverted",
+      "text": "- Fas\n& 4 : Thy TSN\n: 7 i ¢ i ' E\n_ ; e 2\n4a i Ta .\n: @: . 5 pr\n3 k, - 4 a - / : ]\n1 EN wo Eel re TY\nL Wo ad\n3 I —————— N hE\n. 3 - oF\n— — he N : ©. p\n3 . . \\ Ee\n& gl\n\\ IES ASE\nBe EE : oe\ni 2]\nae Rew — — » i 1\n* JE— | : |\nane 3 A |\na A i { -\nSp -, 0 i } 4\no> : |\n| : i sian\n> Ein a |\noe 1\nBo ‘ ey\n’ ha fe b |\na § NE ]\nWie: = RG .\nwy doi 3 A EE aT\nSi = & 3 5 Bo is 1\nz Re . —. Er\nFR ea : 4 |\nFor Re Eh * 2\ngd ; a Te &\nLa Soma 3 \\\n§ kr a CHA -\nAEE LHR = Jp)\nSi CHAE a ;\n& ao TN Se NR dig pie\nEy Ee RUD I ST MEE)\n— VU) : 3 4 c 4\n: -— Eo _—\n: 0 wm eo »\n2 o pa = = Up :\ngs\n- to UU) S 0 |\nEo = = :\n<A\nHl 2 — dl he i\nba D) i .\nfe\nEe\n5 oR i\nEL al |\n= 1\n. E Fa\nRe i\nra - fe & 4 \\ ’\noF Fe Hp 3 .\net Ea \\ wr\nEe Te a na\n",
+      "confidence": 30,
+      "words": [],
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": []
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    },
+    "ocrad": {
+      "engine": "ocrad.js",
+      "variant": "inverted",
+      "text": "",
+      "error": "Cannot read properties of undefined (reading 'width')",
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": []
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "variant": "threshold",
+    "tesseract": {
+      "engine": "Tesseract.js",
+      "variant": "threshold",
+      "text": ": =\n5 E {ic a, Said A 4\nE. : : GH 3\n3 : F 4 Fras PA ) :\n+ E br JON sr .\n% 2% CAR\n) 1 ANY dae\n5 3) Pass\ni oo iE\nol A pop BE an\nie a Bey\n: | Lc ; 3 , r p .\nEH |\nJ ii\n7 SAE oh hd |\n| ; ; i\n| 3 Ek: 1\n__ . aa :\nes Ls dt - FY i\nve a 3 |\nAMEE 4 1\nCi aE GT J\n= a 8\n¢ i 3 pe x 2\nON 1 . EO\na 3 \" ey\nI~ ET ; 1 | a\n” E Parsi oa |\n: GE a { i wee\n= 4 1 Teil\nvite | a _ ER\ngr _— \" Been TR\nFY ee | ee\nGoi [] i | JE riot\n» SE Ld | :\nren NE | i SOP i fi -\nSl te b | i 4\n| as an TE - Ld i be Ce\nFE ng & Ie\na . PESENGN gg ERNE ab\nEan Fd CT a Jog F 1\nJe a ee a i -\nShenae os POUR Ben Las 4 oo.\nai a LES et Sh f -\nRTE ne Re eR ST SO Ia | -\nge i 3\n.. § =\nse Curr ae Te ' ] LE\nch ae betel Gn ee p Sa ©\nEn MRE ela SRS BE eli E\n| Re aT . fi ae CT\n: Gere i Sgn : 4 EL\n: mE\n71 GL eR\ney\n5\n' so TI = Cc Ee :\n| HEE RE\nANE SN 3 :\n| : LER RC\n1 rr) \" Co A ena EE :\nwo EA Eo :\npo Hida a Titus\n. § a\nCL TR OE fA\n: . Ee a :\n) ; Comend  E\n. i fe i\n: hat ae ll i 3\nLeo ae ae TAS RS ;\n] PRR ae I\nE » LY 3 = a re 5\n» . 3 “ ee | i\nCa 5\n{re ;\n",
+      "confidence": 26,
+      "words": [],
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": [
+              "71"
+            ]
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": [
+              71
+            ]
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": [
+              71
+            ]
+          }
+        }
+      ]
+    },
+    "ocrad": {
+      "engine": "ocrad.js",
+      "variant": "threshold",
+      "text": "",
+      "error": "Cannot read properties of undefined (reading 'width')",
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": []
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "variant": "rotate90",
+    "tesseract": {
+      "engine": "Tesseract.js",
+      "variant": "rotate90",
+      "text": "a ra E 4\n: Po ER. EE &\nRh Go Ea\nERB © Ne\nN\n/ PEE\naa : ger\nno Re\n, Gi\nI of\n“id\nwy\n; 121\n[] RE\n.\n| Intelli | Fe\"\n3 ars Stal ho Eres SG rR Ae ee ghia. y a Hs 9\nS a a 3 5 = :\nCel ee ie ie A ] \\\nCLES s El a Ee ; } :\nbs Ce Corse Ee b on\nee : 9\nfee oe %\na. a E. )\naa ef 4 4\nI : 1 FE ; R\nEe 3 | : 4 3 L 4\nRe f : EF\nEacin 3 9\nEE i 4\noh x E\nRe 4 | ’ Dy\nfe | Ek A\npas ay\n+ 1 4\nSe 3 ] :\nPe: 3 go\nAE 3\nEo Re\nEE : alias\na es\n. fe Na\n0\ni 1 fr\na i\nE 1\ni\n= 1 3 E\ni * ; Bo Ed\n3 Er\nke 1 HOR\nFl k oa\nhc ed\nBi ihe\na Gaz cic : : ' a\n- a E ¥e\nEa i i &\nBE ; i\n/ min ae :\nER : =\ne dy i pry ’ 3\nwr - i ]\n- - 3\ny :\n4\nF 4\n;\npan - PRE —. - -~ - L — - - “> - ial -—\n. - i\ny &\n4 E.\n- a\ni. Ee\nhs pr 4\n. CL — 4\ni——————————— A\nv . - > . ey.\n.. - Se his 2 RE\n",
+      "confidence": 29,
+      "words": [],
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": [
+              "121"
+            ]
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": [
+              121
+            ]
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": [
+              121
+            ]
+          }
+        }
+      ]
+    },
+    "ocrad": {
+      "engine": "ocrad.js",
+      "variant": "rotate90",
+      "text": "",
+      "error": "Cannot read properties of undefined (reading 'width')",
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": []
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "variant": "rotate90_contrast",
+    "tesseract": {
+      "engine": "Tesseract.js",
+      "variant": "rotate90_contrast",
+      "text": "A fi ae Hi PE\nGi g a“ i : FE 3 : Be ;\n- ; Ci Go\nSine ole Ce EEC EE F\nseas Sie SE FS\noe : LE = ats ¢ :\ni . — da\ni aii\n0\nJ i\nHEM-712 Waa\n) 1 —\n! oF\nI 14] y L\n. & 3 ; ie ! 4\nn le f & nk di i fed A oo eis Bl ay Gi ie AR 7 grr 4 5 8 k\nNo Leni aa od lr IR 4 s £ pe a Eo ~\nEF - 1 :\nFE pie \\\\\nid ! 3 3 =\na b i\nL ! : pr\n3 1\nmm I g 4 a\n’ ea we : ww i\naie) Bb !\nSRE ER ¢ Bh +\nTO\nro— ’ :\n\"\nr 4\nKa\na ——— - yaw —— - a - = - - — - FURS 3 _—\n- » i\nES\nSh\n‘ y a\nvarie\n- f “ Ee -\n? ov\ni il Te TE\nN a (Ne\n; pt 2\n_— a J ie A\n ——————— oe gs\nx a ELE Sg gE 2 pea\n",
+      "confidence": 27,
+      "words": [],
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": [
+              "712",
+              "14"
+            ]
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    },
+    "ocrad": {
+      "engine": "ocrad.js",
+      "variant": "rotate90_contrast",
+      "text": "",
+      "error": "Cannot read properties of undefined (reading 'width')",
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": []
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "variant": "crop_lcd",
+    "tesseract": {
+      "engine": "Tesseract.js",
+      "variant": "crop_lcd",
+      "text": "AY\n:\n\\\ni 1\n:\n!\na |\nEE |\nSE : Tio es |\nBiv\nCER\ncane Ha\na Sie —\nEe ies SE |\npone |\n5 EE ER\nSI\nfe\nae\nRrra ER |\nEERE\nEE\nSF —\nCEE\nein ;\nSn Sots Ha\nTr Se i\nEF Brians\nBaers is\nBee sg a\nbee |\nCre 4\nHal aR\nSaeerw 4 3\nEN  —— ;\nhe j\nEstella oo 4\nees EN 3 :\nSe A A ? ;\nee ; |\n21 EST F\nBel ie ee F\nae a op f\nES\nNe\nBa Bnd he |\na ; Pere |\nBhat Ssh aha i\n=: ey i Lk ]\ni\n(§p)] |\npe pd iE | >\n* m— {\nQD ~ Sia _ :\n",
+      "confidence": 25,
+      "words": [],
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": [
+              "21"
+            ]
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    },
+    "ocrad": {
+      "engine": "ocrad.js",
+      "variant": "crop_lcd",
+      "text": "",
+      "error": "Cannot read properties of undefined (reading 'width')",
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": []
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "variant": "crop_lcd_contrast",
+    "tesseract": {
+      "engine": "Tesseract.js",
+      "variant": "crop_lcd_contrast",
+      "text": ".\n\\ [J\n4\n{\nat , {\ni Sar ie\nE | {\nFE ] i\nRo. 4\nL {= Zo\ne\nEF\nEo % ay\nEe TEAS\nne . AGE\nEsa TRUS\nES SHE ie\nCie Sa .\neo FI ah ‘\nRSE - ae\neR ps\nCle\n2 i -\nbe ae yl Bh\nRal - i\neo oo EE » of\nSlate =\nER E\nBaa ee > id\ni Se Es |\nRa BR E\nHee Te\nge FR Sl NC\nRE CaO eae Se CEL he\nge ee RE EN TRE BE ie oa ah\n!\n5\nU ) hd S| A “=\n. — [}] 1\na [Ena\n- 0\nQD ~ Co =\n",
+      "confidence": 25,
+      "words": [],
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": []
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    },
+    "ocrad": {
+      "engine": "ocrad.js",
+      "variant": "crop_lcd_contrast",
+      "text": "",
+      "error": "Cannot read properties of undefined (reading 'width')",
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": []
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "variant": "crop_lcd_threshold",
+    "tesseract": {
+      "engine": "Tesseract.js",
+      "variant": "crop_lcd_threshold",
+      "text": "Py res coking\ni RE\nCE\n5 SR ST\nSe ] 1 ]\nee Eo {\n* he H i |\nx 4 1\ny' y ; :\ngh i } A\nSel hE LY dil i\nSi By H\n- : Sr |\nSHEN Se 4 i ESP ; §\nST a ;\nLi Ey eS AR fra\nar ALR fea ;\nCERT EE Sag ae eh\nTend SHEER TE SE EE Gi\nos la eg -\nSh CLES ay eae\na or Ta de\nCHEER as a Ea sin hl ne ] |\nSER Te CER a NE\nCoe pA ee i N\n& Cr ERR Sle a ]\ni\ni\nA\n:\n- (fA p £ \" —\nOe = += — tN Cc\n",
+      "confidence": 24,
+      "words": [],
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": []
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    },
+    "ocrad": {
+      "engine": "ocrad.js",
+      "variant": "crop_lcd_threshold",
+      "text": "",
+      "error": "Cannot read properties of undefined (reading 'width')",
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": []
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    }
+  },
+  {
+    "variant": "sharpen",
+    "tesseract": {
+      "engine": "Tesseract.js",
+      "variant": "sharpen",
+      "text": "WET 3 # TIVE. TINNY Fe .\nbn, 4 iO Fae iad 3 4 LEAD fh NY sord Ga 5\nSul TREE i la alty -\naa ede EEC & F 1 vo\nposal aE F L E\nes SER y ¢ Ens _— - : Ses\nGoes EL Ear 4 — N -\nSa Hh Lg io Fy big:\n4 ane 2 nr EB hen\nLead SFE CE a. CTS i 2\nBaer Jo Te TD a\nfiir 3 ka a5 i E i =a\nbr 4 3 TE Tha a 4 pe ASE\nua ] | on Ea i mR\ne 1 - ¥ En a 4 EE een % <\n2 .- - ve - i 7 T—— RTL EEE Ce\n3 3 ic. er Hi em i Ld re\nEL Ng Ee Tah SL\nI RRL da\nE 1 y \\ 9r\n4 3 IBE— ba ET\n& E Bs cai Ct —— Sn i “a Sel\n4 i Sans “ \\ Lad ah\ni \\ S Se wed\ni : EN LY h be SER\ni A . bh Col ning\n[ \\ SE ol\nLE \\ hy an\nBy Be i i 3 ga\ney 3 | er\nPE i A h aa\naa b | % Ve ai:\nv 3 pee\nd | Le\ni Hs\n” i ed\nve TR 3 2) A De CO PTB ERE rrr br NTA \" | 1\nhy eS {7 # ! . i\nEo Na i\n| E = |\n; | = it |\n| “KE BB En | |\nEo |\nPion a : | {\nSHEA |\nEo 4\n] CE i i - 3\nCATCH 7 5\nyo 3 \\\nEon oo —— i.\nfo “ i ) Pr\nPoca Gea LE\nfe : o bor nC TR i\n9 Cn Gp mE | '\ngo ; ales wre ool i by.\ngE Eds eR i\nNie Ron Re § § »\nRTA Se SR SRR) us i :\n. Ge Se a | i\nbe : Brana 'd\nEE lat a Ee a So : |\nEe AoSei SR | |\nag { LEAs Bee Gee Sane J i\nFe on | ERE re ints SE\n4 HRS mR SN a8 Ci eR ] i\nRi JUS RE : F * Dn 2 i\nPo i lo e— 4 Bes A\nABS a S fe : Te i\nLo . Fo |\nCae i Glens le eo |\nSa = so be : i :\norn Galilee dae i =\nee et LAE 1 EECA RN A Ee FN SRG ¥ Bre I \\ 3\n3 es OTE EE EE a | y\nERE eet EN Basis alg Te ER Es a | i\nShe hen EE a ! 3\nTHERE eee Re i GE : oe :\nThE ss i ‘ io NEE : j =\nnen oa a 5 Bl { A\n; Ea i Ee |\n5 Ds ea Pp EEO He Ne SSE) ihe DINOS. id\npr\nSUS [i\nA oF 4 3\n= Tad . 4 8\n5) Gm Fy A\nCea ig 3 i — he\nig i\na ]\nci . 0 Sn i\naS EE 1 [|\nCe\nSer Co {\nSe 2 i i -\nhae | 3 ’\nCob RE \\\nLE SS Fei k | | I FE\nC0 ! - :\nbocce. SEER \\ 4\naide, aE }\n2 Eo .\nSits ARETE X i\nEn SEL So )\\ i i\nBaie TA Es GN 9 i\neo mdse 0 * i ji )\nSe Be aa . !\nEN ~ — 4 j\nAUC Che hes “uy Rss eg ;\nCe EEA “a — ;\nCie Ee -\na A ee 7 Bes a es uy\nfe Fe re Al SE i :\n",
+      "confidence": 25,
+      "words": [],
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": []
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    },
+    "ocrad": {
+      "engine": "ocrad.js",
+      "variant": "sharpen",
+      "text": "",
+      "error": "Cannot read properties of undefined (reading 'width')",
+      "algos": [
+        {
+          "name": "Label-Proximity",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Separator",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {}
+        },
+        {
+          "name": "Range+PP",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "nums": []
+          }
+        },
+        {
+          "name": "Range-Only",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        },
+        {
+          "name": "Omron-Layout-Order",
+          "sys": null,
+          "dia": null,
+          "hr": null,
+          "raw": {
+            "valid": []
+          }
+        }
+      ]
+    }
+  }
+]

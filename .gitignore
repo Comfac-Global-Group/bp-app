@@ -1,3 +1,10 @@
 version.json
 node_modules/
 venv/
+
+# Experiment artifacts (large binaries — not tracked in git)
+experiments/*.jpg
+experiments/*.traineddata
+experiments/tesseract_results.json
+experiments/mediapipe_results.json
+experiments/gemini_results.json

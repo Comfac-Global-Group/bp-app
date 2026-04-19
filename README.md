@@ -64,6 +64,14 @@ Install via **Share → Add to Home Screen**. Camera capture works. Service work
 
 ---
 
+## Experiments
+
+All OCR research, benchmarks, and preprocessing spikes live in the [`experiments/`](experiments/) folder. This keeps the root directory clean and prevents large image artifacts from bloating the repository.
+
+See [`experiments/README.md`](experiments/README.md) for the full index of test harnesses, reports, and how to run them.
+
+---
+
 ## Credits
 
 Originally made by [**Comfac-IT.com**](https://comfac-it.com) with assistance from **Kimi**, **Claude**, and **DeepSeek**.

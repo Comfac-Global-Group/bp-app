@@ -20,7 +20,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SAMPLES_DIR = path.join(__dirname, '..', 'Bloodpressure Samples');
-const ADDITIONAL = [path.join(__dirname, '..', '20260414_112450.jpg')];
+const ADDITIONAL = [path.join(__dirname, '20260414_112450.jpg')];
 
 function parseGroundTruth(filename) {
   const m = filename.match(/omron-(\d+)-(\d+)-(\d+)/);

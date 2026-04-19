@@ -1,0 +1,505 @@
+[
+  {
+    "name": "scale_1x",
+    "desc": "Original size",
+    "nums": [
+      29,
+      25
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 29
+  },
+  {
+    "name": "scale_15x",
+    "desc": "1.5x upscale",
+    "nums": [
+      23,
+      75,
+      55
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 23
+  },
+  {
+    "name": "scale_2x",
+    "desc": "2x upscale",
+    "nums": [
+      61,
+      15,
+      16,
+      20,
+      8,
+      28,
+      20,
+      73,
+      207,
+      25,
+      43,
+      75
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 22
+  },
+  {
+    "name": "scale_3x",
+    "desc": "3x upscale",
+    "nums": [
+      33,
+      42,
+      277,
+      80,
+      13,
+      22,
+      14,
+      25,
+      18,
+      50,
+      53,
+      33,
+      41,
+      58,
+      0,
+      22,
+      3,
+      78,
+      30,
+      570,
+      13,
+      98,
+      45,
+      43,
+      17,
+      0,
+      88,
+      39,
+      34,
+      784,
+      73,
+      10
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": true,
+    "has59": false,
+    "count": 1,
+    "confidence": 21
+  },
+  {
+    "name": "threshold_100",
+    "desc": "Threshold @ 100",
+    "nums": [],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 27
+  },
+  {
+    "name": "threshold_128",
+    "desc": "Threshold @ 128",
+    "nums": [
+      71
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 26
+  },
+  {
+    "name": "threshold_150",
+    "desc": "Threshold @ 150",
+    "nums": [],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 22
+  },
+  {
+    "name": "threshold_180",
+    "desc": "Threshold @ 180",
+    "nums": [],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 19
+  },
+  {
+    "name": "contrast_15",
+    "desc": "Contrast 1.5x",
+    "nums": [
+      53
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 28
+  },
+  {
+    "name": "contrast_2",
+    "desc": "Contrast 2x",
+    "nums": [
+      30,
+      53
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 26
+  },
+  {
+    "name": "contrast_25",
+    "desc": "Contrast 2.5x",
+    "nums": [],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 33
+  },
+  {
+    "name": "contrast_3",
+    "desc": "Contrast 3x",
+    "nums": [
+      74
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 35
+  },
+  {
+    "name": "gamma_12",
+    "desc": "Gamma 1.2",
+    "nums": [],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 29
+  },
+  {
+    "name": "gamma_15",
+    "desc": "Gamma 1.5",
+    "nums": [
+      68
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 28
+  },
+  {
+    "name": "gamma_20",
+    "desc": "Gamma 2.0",
+    "nums": [
+      75
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 30
+  },
+  {
+    "name": "blur_mild_threshold",
+    "desc": "Blur 0.5 + threshold",
+    "nums": [
+      71
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 26
+  },
+  {
+    "name": "blur_med_threshold",
+    "desc": "Blur 1.0 + threshold",
+    "nums": [
+      22
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 27
+  },
+  {
+    "name": "sharpen_mild",
+    "desc": "Sharpen mild",
+    "nums": [
+      23
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 25
+  },
+  {
+    "name": "sharpen_med",
+    "desc": "Sharpen medium",
+    "nums": [],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 25
+  },
+  {
+    "name": "sharpen_aggressive",
+    "desc": "Sharpen aggressive",
+    "nums": [
+      35,
+      55,
+      73,
+      28
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 24
+  },
+  {
+    "name": "crop_lcd",
+    "desc": "Crop to LCD",
+    "nums": [],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 33
+  },
+  {
+    "name": "crop_lcd_contrast",
+    "desc": "Crop + contrast",
+    "nums": [],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 39
+  },
+  {
+    "name": "crop_lcd_sharpen",
+    "desc": "Crop + sharpen",
+    "nums": [
+      78,
+      50
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": true,
+    "has59": false,
+    "count": 1,
+    "confidence": 28
+  },
+  {
+    "name": "rotate90",
+    "desc": "Rotate 90°",
+    "nums": [
+      28,
+      33
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 27
+  },
+  {
+    "name": "rotate90_contrast",
+    "desc": "Rotate 90° + contrast",
+    "nums": [
+      73
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 29
+  },
+  {
+    "name": "rotate90_threshold_128",
+    "desc": "Rotate 90° + threshold",
+    "nums": [],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 22
+  },
+  {
+    "name": "scale2x_contrast",
+    "desc": "2x + contrast",
+    "nums": [
+      20,
+      24,
+      58,
+      13,
+      28,
+      44,
+      388,
+      37,
+      58,
+      6
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 24
+  },
+  {
+    "name": "scale2x_threshold",
+    "desc": "2x + threshold",
+    "nums": [
+      373,
+      23,
+      17,
+      20,
+      35,
+      10,
+      43,
+      85,
+      83,
+      25,
+      21
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 22
+  },
+  {
+    "name": "scale2x_sharpen_threshold",
+    "desc": "2x + sharpen + threshold",
+    "nums": [
+      373,
+      23,
+      17,
+      20,
+      35,
+      10,
+      43,
+      85,
+      83,
+      25,
+      21
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 22
+  },
+  {
+    "name": "normalize",
+    "desc": "Histogram normalize",
+    "nums": [
+      78
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": true,
+    "has59": false,
+    "count": 1,
+    "confidence": 29
+  },
+  {
+    "name": "normalize_threshold",
+    "desc": "Normalize + threshold",
+    "nums": [
+      71
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 26
+  },
+  {
+    "name": "clahe",
+    "desc": "CLAHE adaptive contrast",
+    "nums": [
+      27,
+      75
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 26
+  },
+  {
+    "name": "inverted",
+    "desc": "Color inverted",
+    "nums": [],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 30
+  },
+  {
+    "name": "inverted_threshold",
+    "desc": "Inverted + threshold",
+    "nums": [
+      71
+    ],
+    "perfect": false,
+    "has118": false,
+    "has78": false,
+    "has59": false,
+    "count": 0,
+    "confidence": 25
+  }
+]
