@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>7-Segment Template Matching — BPLog Experiment</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; background: #f5f7fa; }
+  h1 { font-size: 20px; margin-bottom: 6px; }
+  .subtitle { color: #666; font-size: 13px; margin-bottom: 16px; }
+  .controls { background: #fff; padding: 12px 16px; border-radius: 10px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .controls label { font-size: 13px; font-weight: 600; }
+  .controls input[type="range"] { vertical-align: middle; }
+  canvas { max-width: 100%; background: #fff; border: 1px solid #ddd; border-radius: 8px; display: block; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .panel { background: #fff; padding: 12px; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .panel h3 { margin: 0 0 8px; font-size: 14px; color: #444; }
+  .hint { font-size: 12px; color: #888; margin: 6px 0 0; }
+  .result { margin-top: 16px; background: #fff; padding: 16px; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .row-result { display: flex; gap: 12px; align-items: center; margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 8px; }
+  .digit-box { width: 60px; height: 90px; border: 1px solid #ccc; border-radius: 6px; background: #000; position: relative; }
+  .digit-box canvas { width: 100%; height: 100%; border: none; background: transparent; }
+  .digit-readout { font-size: 28px; font-weight: 700; font-family: monospace; color: #0d7377; min-width: 40px; text-align: center; }
+  .segment-diagram { width: 40px; height: 60px; position: relative; }
+  .seg { position: absolute; background: #ddd; border-radius: 2px; transition: background .2s; }
+  .seg.on { background: #0d7377; box-shadow: 0 0 4px #0d7377; }
+  .seg-a { top: 0; left: 6px; width: 28px; height: 4px; }
+  .seg-b { top: 4px; right: 0; width: 4px; height: 24px; }
+  .seg-c { bottom: 4px; right: 0; width: 4px; height: 24px; }
+  .seg-d { bottom: 0; left: 6px; width: 28px; height: 4px; }
+  .seg-e { bottom: 4px; left: 0; width: 4px; height: 24px; }
+  .seg-f { top: 4px; left: 0; width: 4px; height: 24px; }
+  .seg-g { top: 28px; left: 6px; width: 28px; height: 4px; }
+  .match-list { font-size: 12px; color: #666; }
+  .status-ok { color: #15803d; font-weight: 700; }
+  .status-warn { color: #b45309; font-weight: 700; }
+  .status-fail { color: #c0392b; font-weight: 700; }
+  .proj-canvas { width: 100%; height: 60px; background: #fff; border: 1px solid #eee; border-radius: 4px; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<h1>🔬 7-Segment Template Matching Experiment</h1>
+<div class="subtitle">Pure JS canvas math — no external OCR libraries. Click-drag to select the LCD region.</div>
+
+<div class="controls">
+  <input type="file" id="fileInput" accept="image/*">
+  <button id="btn-default">Load default image</button>
+  <label>Threshold: <input type="range" id="threshold" min="40" max="200" value="120"></label>
+  <span id="thresh-val">120</span>
+  <button id="btn-analyze" disabled>Analyze LCD</button>
+  <button id="btn-clear">Clear selection</button>
+</div>
+
+<div class="grid">
+  <div class="panel">
+    <h3>Source <span class="hint">(drag to select LCD area)</span></h3>
+    <canvas id="srcCanvas"></canvas>
+  </div>
+  <div class="panel">
+    <h3>Thresholded Preview</h3>
+    <canvas id="procCanvas"></canvas>
+  </div>
+</div>
+
+<div id="output"></div>
+
+<script>
+// =================== 7-Segment Templates ===================
+// segments: [a,b,c,d,e,f,g] — 1 = on
+const DIGIT_SEGMENTS = {
+  0: [1,1,1,1,1,1,0],
+  1: [0,1,1,0,0,0,0],
+  2: [1,1,0,1,1,0,1],
+  3: [1,1,1,1,0,0,1],
+  4: [0,1,1,0,0,1,1],
+  5: [1,0,1,1,0,1,1],
+  6: [1,0,1,1,1,1,1],
+  7: [1,1,1,0,0,0,0],
+  8: [1,1,1,1,1,1,1],
+  9: [1,1,1,1,0,1,1],
+};
+
+function segmentDiagramHTML(segments) {
+  const cls = (i) => segments[i] ? 'seg on' : 'seg';
+  return `<div class="segment-diagram">
+    <div class="seg-a ${cls(0)}"></div>
+    <div class="seg-b ${cls(1)}"></div>
+    <div class="seg-c ${cls(2)}"></div>
+    <div class="seg-d ${cls(3)}"></div>
+    <div class="seg-e ${cls(4)}"></div>
+    <div class="seg-f ${cls(5)}"></div>
+    <div class="seg-g ${cls(6)}"></div>
+  </div>`;
+}
+
+function hamming(a, b) {
+  let d = 0;
+  for (let i = 0; i < 7; i++) if (a[i] !== b[i]) d++;
+  return d;
+}
+
+function matchDigit(segments) {
+  const scores = [];
+  for (let d = 0; d <= 9; d++) {
+    scores.push({ digit: d, dist: hamming(segments, DIGIT_SEGMENTS[d]) });
+  }
+  scores.sort((a, b) => a.dist - b.dist);
+  return scores;
+}
+
+// =================== Canvas & Image State ===================
+const srcCanvas = document.getElementById('srcCanvas');
+const procCanvas = document.getElementById('procCanvas');
+const srcCtx = srcCanvas.getContext('2d');
+const procCtx = procCanvas.getContext('2d');
+
+let currentImage = null;
+let roi = null; // {x, y, w, h}
+let isDragging = false;
+let dragStart = null;
+
+const DEFAULT_IMAGE = '20260414_112450.jpg';
+
+// =================== Image Loading ===================
+function loadImage(src) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = rej;
+    img.src = src;
+  });
+}
+
+async function setImage(img) {
+  currentImage = img;
+  // Fit canvas to image, max width 500
+  const maxW = 500;
+  const scale = Math.min(1, maxW / img.naturalWidth);
+  srcCanvas.width = img.naturalWidth * scale;
+  srcCanvas.height = img.naturalHeight * scale;
+  srcCtx.drawImage(img, 0, 0, srcCanvas.width, srcCanvas.height);
+  roi = null;
+  updateProc();
+  document.getElementById('btn-analyze').disabled = true;
+}
+
+document.getElementById('fileInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  const img = await loadImage(url);
+  await setImage(img);
+});
+
+document.getElementById('btn-default').addEventListener('click', async () => {
+  const img = await loadImage(DEFAULT_IMAGE);
+  await setImage(img);
+});
+
+// Auto-load default on startup
+loadImage(DEFAULT_IMAGE).then(img => setImage(img)).catch(() => {});
+
+// =================== ROI Selection ===================
+srcCanvas.addEventListener('mousedown', (e) => {
+  const rect = srcCanvas.getBoundingClientRect();
+  dragStart = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  isDragging = true;
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (!isDragging || !currentImage) return;
+  const rect = srcCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const x = Math.min(dragStart.x, mx);
+  const y = Math.min(dragStart.y, my);
+  const w = Math.abs(mx - dragStart.x);
+  const h = Math.abs(my - dragStart.y);
+  // Redraw image + selection box
+  srcCtx.drawImage(currentImage, 0, 0, srcCanvas.width, srcCanvas.height);
+  srcCtx.strokeStyle = '#0d7377';
+  srcCtx.lineWidth = 2;
+  srcCtx.strokeRect(x, y, w, h);
+  srcCtx.fillStyle = 'rgba(13,115,119,0.15)';
+  srcCtx.fillRect(x, y, w, h);
+});
+
+window.addEventListener('mouseup', (e) => {
+  if (!isDragging) return;
+  isDragging = false;
+  const rect = srcCanvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+  const x = Math.min(dragStart.x, mx);
+  const y = Math.min(dragStart.y, my);
+  const w = Math.abs(mx - dragStart.x);
+  const h = Math.abs(my - dragStart.y);
+  if (w > 40 && h > 40) {
+    roi = { x, y, w, h };
+    document.getElementById('btn-analyze').disabled = false;
+    updateProc();
+  }
+});
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+  roi = null;
+  if (currentImage) srcCtx.drawImage(currentImage, 0, 0, srcCanvas.width, srcCanvas.height);
+  document.getElementById('btn-analyze').disabled = true;
+  document.getElementById('output').innerHTML = '';
+  updateProc();
+});
+
+// =================== Preprocessing ===================
+function getThreshold() {
+  return parseInt(document.getElementById('threshold').value, 10);
+}
+
+document.getElementById('threshold').addEventListener('input', (e) => {
+  document.getElementById('thresh-val').textContent = e.target.value;
+  updateProc();
+});
+
+function updateProc() {
+  if (!currentImage) return;
+  procCanvas.width = srcCanvas.width;
+  procCanvas.height = srcCanvas.height;
+  procCtx.drawImage(currentImage, 0, 0, procCanvas.width, procCanvas.height);
+  const imgData = procCtx.getImageData(0, 0, procCanvas.width, procCanvas.height);
+  const d = imgData.data;
+  const thr = getThreshold();
+  for (let i = 0; i < d.length; i += 4) {
+    const gray = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
+    const v = gray < thr ? 0 : 255;
+    d[i] = d[i+1] = d[i+2] = v;
+  }
+  procCtx.putImageData(imgData, 0, 0);
+
+  // Draw ROI overlay
+  if (roi) {
+    procCtx.strokeStyle = '#e74c3c';
+    procCtx.lineWidth = 2;
+    procCtx.strokeRect(roi.x, roi.y, roi.w, roi.h);
+  }
+}
+
+// =================== Analysis ===================
+document.getElementById('btn-analyze').addEventListener('click', analyzeROI);
+
+function analyzeROI() {
+  if (!roi || !currentImage) return;
+  const thr = getThreshold();
+
+  // Get thresholded pixel data from the ROI
+  const imgData = procCtx.getImageData(roi.x, roi.y, roi.w, roi.h);
+  const w = roi.w, h = roi.h;
+  const data = imgData.data;
+
+  // Build binary matrix (1 = dark/segment)
+  const bin = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      bin[y * w + x] = data[i] < 128 ? 1 : 0;
+    }
+  }
+
+  // Horizontal projection: sum per row
+  const hProj = new Array(h).fill(0);
+  for (let y = 0; y < h; y++) {
+    let sum = 0;
+    for (let x = 0; x < w; x++) sum += bin[y * w + x];
+    hProj[y] = sum;
+  }
+
+  // Find row boundaries by looking for valleys in horizontal projection
+  const rows = findSegments(hProj, 3, 0.15);
+
+  // Analyze each row
+  const results = [];
+  for (let r = 0; r < rows.length; r++) {
+    const { start, end } = rows[r];
+    const rowH = end - start;
+    const rowY = start;
+
+    // Vertical projection within this row
+    const vProj = new Array(w).fill(0);
+    for (let x = 0; x < w; x++) {
+      let sum = 0;
+      for (let y = rowY; y < end; y++) sum += bin[y * w + x];
+      vProj[x] = sum;
+    }
+
+    // Find digit boundaries
+    const digitBounds = findSegments(vProj, 3, 0.2);
+
+    const digits = [];
+    for (const db of digitBounds) {
+      const digitW = db.end - db.start;
+      const digitH = rowH;
+      if (digitW < 8 || digitH < 12) continue;
+
+      // Sample 7 segment zones
+      const seg = sampleSegments(bin, w, h, roi.x + db.start, roi.y + rowY, digitW, digitH);
+      const matches = matchDigit(seg);
+      const best = matches[0];
+      digits.push({ seg, matches, best, x: db.start, w: digitW });
+    }
+
+    results.push({ row: r, y: rowY, h: rowH, digits });
+  }
+
+  renderResults(results, bin, w, h);
+}
+
+// Find contiguous segments separated by valleys
+function findSegments(projection, desiredCount, valleyRatio) {
+  const len = projection.length;
+  const maxVal = Math.max(...projection);
+  const threshold = maxVal * valleyRatio;
+
+  // Find valleys (runs below threshold)
+  const valleys = [];
+  let inValley = false;
+  let valleyStart = 0;
+  for (let i = 0; i < len; i++) {
+    if (projection[i] < threshold) {
+      if (!inValley) { inValley = true; valleyStart = i; }
+    } else {
+      if (inValley) {
+        valleys.push({ start: valleyStart, end: i, center: Math.floor((valleyStart + i) / 2) });
+        inValley = false;
+      }
+    }
+  }
+  if (inValley) valleys.push({ start: valleyStart, end: len, center: Math.floor((valleyStart + len) / 2) });
+
+  // Use valleys to split into segments
+  const segments = [];
+  let prev = 0;
+  for (const v of valleys) {
+    if (v.start - prev > 5) {
+      segments.push({ start: prev, end: v.start });
+    }
+    prev = v.end;
+  }
+  if (len - prev > 5) segments.push({ start: prev, end: len });
+
+  // If we have too many, merge smallest neighbors
+  while (segments.length > desiredCount) {
+    let minIdx = -1, minSize = Infinity;
+    for (let i = 0; i < segments.length; i++) {
+      const s = segments[i].end - segments[i].start;
+      if (s < minSize) { minSize = s; minIdx = i; }
+    }
+    if (minIdx === 0) {
+      segments[1].start = segments[0].start;
+    } else if (minIdx === segments.length - 1) {
+      segments[segments.length - 2].end = segments[minIdx].end;
+    } else {
+      const left = segments[minIdx - 1].end - segments[minIdx - 1].start;
+      const right = segments[minIdx + 1].end - segments[minIdx + 1].start;
+      if (left < right) {
+        segments[minIdx - 1].end = segments[minIdx].end;
+      } else {
+        segments[minIdx + 1].start = segments[minIdx].start;
+      }
+    }
+    segments.splice(minIdx, 1);
+  }
+
+  return segments;
+}
+
+function sampleSegments(bin, imgW, imgH, dx, dy, dw, dh) {
+  // Sample 7 zones within the digit bounding box
+  // bin is relative to ROI, but dx,dy are relative to src image
+  // We need coordinates relative to ROI
+  const rx = dx - roi.x;
+  const ry = dy - roi.y;
+
+  const padX = Math.floor(dw * 0.15);
+  const padY = Math.floor(dh * 0.1);
+  const innerW = dw - padX * 2;
+  const innerH = dh - padY * 2;
+  const midY = Math.floor(dh / 2);
+  const segH = Math.floor(innerH * 0.25);
+  const segW = Math.floor(innerW * 0.6);
+
+  function sampleZone(zx, zy, zw, zh) {
+    let count = 0, total = 0;
+    const x0 = Math.max(0, rx + zx);
+    const y0 = Math.max(0, ry + zy);
+    const x1 = Math.min(imgW, x0 + zw);
+    const y1 = Math.min(imgH, y0 + zh);
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        count += bin[y * imgW + x];
+        total++;
+      }
+    }
+    return total > 0 ? (count / total) > 0.3 : 0;
+  }
+
+  // Zone definitions relative to digit top-left
+  const zones = [
+    // a: top horizontal
+    { x: padX + Math.floor(innerW * 0.2), y: padY, w: segW, h: segH },
+    // b: top-right vertical
+    { x: padX + Math.floor(innerW * 0.65), y: padY + Math.floor(segH * 0.3), w: Math.floor(innerW * 0.25), h: Math.floor(innerH * 0.35) },
+    // c: bottom-right vertical
+    { x: padX + Math.floor(innerW * 0.65), y: midY + Math.floor(segH * 0.3), w: Math.floor(innerW * 0.25), h: Math.floor(innerH * 0.35) },
+    // d: bottom horizontal
+    { x: padX + Math.floor(innerW * 0.2), y: dh - padY - segH, w: segW, h: segH },
+    // e: bottom-left vertical
+    { x: padX, y: midY + Math.floor(segH * 0.3), w: Math.floor(innerW * 0.25), h: Math.floor(innerH * 0.35) },
+    // f: top-left vertical
+    { x: padX, y: padY + Math.floor(segH * 0.3), w: Math.floor(innerW * 0.25), h: Math.floor(innerH * 0.35) },
+    // g: middle horizontal
+    { x: padX + Math.floor(innerW * 0.2), y: midY - Math.floor(segH * 0.4), w: segW, h: segH },
+  ];
+
+  return zones.map(z => sampleZone(z.x, z.y, z.w, z.h) ? 1 : 0);
+}
+
+// =================== Results Rendering ===================
+function renderResults(results, bin, w, h) {
+  const out = document.getElementById('output');
+  let html = '<div class="result"><h2>Analysis Results</h2>';
+
+  // Build mini canvases for each digit
+  for (let r = 0; r < results.length; r++) {
+    const row = results[r];
+    const gtValues = ['118', '78', '59']; // ground truth for default image
+    html += `<div class="row-result">`;
+    html += `<div style="min-width:80px"><strong>Row ${r+1}</strong><br><span class="hint">GT: ${gtValues[r]||'?'}</span></div>`;
+
+    for (let d = 0; d < row.digits.length; d++) {
+      const dig = row.digits[d];
+      const status = dig.best.dist === 0 ? 'status-ok' : dig.best.dist <= 2 ? 'status-warn' : 'status-fail';
+      html += `<div style="text-align:center">`;
+      html += `<div class="digit-box"><canvas id="dig-${r}-${d}" width="${dig.w}" height="${row.h}"></canvas></div>`;
+      html += `<div class="digit-readout ${status}">${dig.best.digit}</div>`;
+      html += `${segmentDiagramHTML(dig.seg)}`;
+      html += `<div class="match-list">dist:${dig.best.dist}</div>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+
+  html += `<p class="hint">Ground truth for default image: SYS=118, DIA=78, PULSE=59. Dist=0 means perfect template match. Dist>2 likely indicates noise or mis-segmentation.</p>`;
+  html += `</div>`;
+  out.innerHTML = html;
+
+  // Paint digit mini-canvases
+  for (let r = 0; r < results.length; r++) {
+    const row = results[r];
+    for (let d = 0; d < row.digits.length; d++) {
+      const dig = row.digits[d];
+      const c = document.getElementById(`dig-${r}-${d}`);
+      if (!c) continue;
+      const ctx = c.getContext('2d');
+      const imgData = ctx.createImageData(dig.w, row.h);
+      const rx = dig.x;
+      const ry = row.y;
+      for (let y = 0; y < row.h; y++) {
+        for (let x = 0; x < dig.w; x++) {
+          const srcIdx = ((ry + y) * w + (rx + x));
+          const dstIdx = (y * dig.w + x) * 4;
+          const v = bin[srcIdx] ? 0 : 255;
+          imgData.data[dstIdx] = v;
+          imgData.data[dstIdx+1] = v;
+          imgData.data[dstIdx+2] = v;
+          imgData.data[dstIdx+3] = 255;
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+  }
+}
+</script>
+</body>
+</html>
