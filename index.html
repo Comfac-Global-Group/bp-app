@@ -328,6 +328,18 @@
     </div>
   </div>
 
+  <!-- Modal: diagnostics -->
+  <div class="overlay" id="diagnostics-overlay" style="z-index:2000;">
+    <div class="modal" style="max-height:80vh; display:flex; flex-direction:column;">
+      <div class="card-title">🔍 Network Diagnostics</div>
+      <pre id="diagnostics-modal-body" style="flex:1; overflow:auto; font-size:11px; background:#f5f5f5; padding:12px; border-radius:4px; margin:8px 0; white-space:pre-wrap; word-break:break-word;"></pre>
+      <div class="flex gap-2 mt-2">
+        <button class="btn btn-secondary" id="diagnostics-copy">📋 Copy</button>
+        <button class="btn btn-primary" id="diagnostics-close">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: processing -->
   <div class="overlay" id="loading-overlay">
     <div class="modal" style="text-align:center">

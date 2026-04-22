@@ -1738,6 +1738,30 @@ function dataUrlToBlob(dataUrl) {
 
 // =================== AMM Detection ===================
 async function probeAMM() {
+  // Prefer JS bridge (no HTTP/PNA issues)
+  if (window.AMMBridge) {
+    try {
+      const isRunning = window.AMMBridge.isHttpServiceRunning && window.AMMBridge.isHttpServiceRunning();
+      const isLoaded = window.AMMBridge.isVisionModelLoaded && window.AMMBridge.isVisionModelLoaded();
+      const modelName = window.AMMBridge.getLoadedModelName && window.AMMBridge.getLoadedModelName() || 'unknown';
+      if (isRunning && isLoaded) {
+        console.log('[AMM] Bridge probe success:', modelName);
+        return {
+          version: window.AMMBridge.getAmmVersion ? window.AMMBridge.getAmmVersion() : '1.1.4',
+          ready: true,
+          capabilities: ['vision'],
+          models: { vision: modelName },
+          queue_depth: 0,
+          inference_mode: 'local',
+        };
+      }
+      console.warn('[AMM] Bridge probe: service=', isRunning, 'model=', isLoaded);
+    } catch (e) {
+      console.warn('[AMM] Bridge probe error:', e.message || e);
+    }
+  }
+
+  // Fallback: HTTP probe (may fail on HTTPS pages due to PNA)
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 3000);
@@ -1747,25 +1771,61 @@ async function probeAMM() {
     });
     clearTimeout(timer);
     if (!res.ok) {
-      console.error('[AMM] Probe HTTP error:', res.status);
+      console.warn('[AMM] HTTP probe error:', res.status);
       return null;
     }
     const data = await res.json();
     if (data.ready && Array.isArray(data.capabilities) && data.capabilities.includes('vision')) {
-      console.log('[AMM] Probe success:', data);
+      console.log('[AMM] HTTP probe success:', data);
       return data;
     }
-    console.warn('[AMM] Probe returned but not ready:', data);
+    console.warn('[AMM] HTTP probe returned but not ready:', data);
     return null;
   } catch (e) {
-    console.warn('[AMM] Probe failed:', e.message || e);
+    console.warn('[AMM] HTTP probe failed:', e.message || e);
     return null;
   }
 }
 
+function parseAmmResponse(data) {
+  const text = data.response || '';
+  let parsed = null;
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*?\}/);
+    if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+  } catch (e) {
+    // fallback: regex extract
+  }
+  if (!parsed) {
+    const nums = text.match(/\d+/g)?.map(Number) || [];
+    if (nums.length >= 2) {
+      parsed = { sys: nums[0], dia: nums[1], bpm: nums[2] ?? null };
+    }
+  }
+  return {
+    sys: parsed?.sys ?? null,
+    dia: parsed?.dia ?? null,
+    hr: parsed?.bpm ?? parsed?.pulse ?? null,
+    algo: 'amm-vision',
+    rawText: text,
+  };
+}
+
 async function runAmmVision(dataUrl, prompt) {
-  // Convert base64 dataUrl to Blob for multipart upload
-  // NOTE: Android WebView blocks fetch() on data: URIs, so we decode manually
+  // Prefer JS bridge (bypasses CORS/PNA entirely), fallback to HTTP
+  if (window.AMMBridge && window.AMMBridge.isVisionModelLoaded && window.AMMBridge.isVisionModelLoaded()) {
+    console.log('[OCR] Using AMM JS Bridge (bypasses HTTP/CORS)...');
+    const base64 = dataUrl.split(',')[1];
+    const jsonStr = window.AMMBridge.ammVisionInfer(
+      base64,
+      prompt || 'Read the three numbers on this blood pressure monitor display. Return JSON: {"sys": <top>, "dia": <middle>, "bpm": <bottom>}. No prose, no markdown.'
+    );
+    const data = JSON.parse(jsonStr);
+    if (!data.success) throw new Error(data.error || 'AMM bridge inference failed');
+    return parseAmmResponse(data);
+  }
+
+  // Fallback: HTTP fetch (may be blocked by PNA on HTTPS pages)
   console.log('[OCR] Stage 1/4: Decoding image...');
   const blob = dataUrlToBlob(dataUrl);
   const formData = new FormData();
@@ -1788,46 +1848,29 @@ async function runAmmVision(dataUrl, prompt) {
   if (!data.success) throw new Error(data.error || 'AMM inference failed');
 
   console.log('[OCR] Stage 4/4: Extracting values from response...');
-  // Parse JSON from AMM response text
-  const text = data.response || '';
-  let parsed = null;
-  try {
-    const jsonMatch = text.match(/\{[\s\S]*?\}/);
-    if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
-  } catch (e) {
-    // fallback: regex extract
-  }
-  if (!parsed) {
-    const nums = text.match(/\d+/g)?.map(Number) || [];
-    if (nums.length >= 2) {
-      parsed = { sys: nums[0], dia: nums[1], bpm: nums[2] ?? null };
-    }
-  }
-
-  return {
-    sys: parsed?.sys ?? null,
-    dia: parsed?.dia ?? null,
-    hr: parsed?.bpm ?? parsed?.pulse ?? null,
-    algo: 'amm-vision',
-    rawText: text,
-  };
+  return parseAmmResponse(data);
 }
 
 // =================== Diagnostics ===================
 async function runNetworkDiagnostics() {
-  const out = document.getElementById('diagnostics-output');
-  if (!out) return;
-  out.style.display = 'block';
-  out.textContent = 'Running diagnostics...\n';
+  const overlay = document.getElementById('diagnostics-overlay');
+  const body = document.getElementById('diagnostics-modal-body');
+  const copyBtn = document.getElementById('diagnostics-copy');
+  const closeBtn = document.getElementById('diagnostics-close');
+  if (!overlay || !body) return;
+
+  overlay.classList.add('active');
+  body.textContent = 'Running diagnostics...\n';
+  if (copyBtn) copyBtn.textContent = '📋 Copy';
 
   const results = [];
-  const ok = (label) => { results.push(`✅ ${label}`); };
-  const fail = (label, detail) => { results.push(`❌ ${label}${detail ? ': ' + detail : ''}`); };
+  const ok = (label, detail) => { results.push(`✅ ${label}${detail ? ' — ' + detail : ''}`); };
+  const fail = (label, detail) => { results.push(`❌ ${label}${detail ? ' — ' + detail : ''}`); };
 
   // 1. Protocol check
   const isHttps = location.protocol === 'https:';
   if (isHttps) {
-    fail('Page is HTTPS', 'Mixed-content may block HTTP localhost');
+    fail('Page is HTTPS', 'Mixed-content + PNA may block HTTP localhost (see workaround below)');
   } else {
     ok('Page is HTTP (no mixed-content risk)');
   }
@@ -1837,11 +1880,11 @@ async function runNetworkDiagnostics() {
   const isWebView = /wv|WebView/.test(ua);
   const isChrome = /Chrome/.test(ua) && !isWebView;
   if (isWebView) {
-    ok(`WebView detected`);
+    ok('Browser is WebView', 'AMM Browser embedded WebView');
   } else if (isChrome) {
-    ok(`Chrome detected`);
+    ok('Browser is Chrome');
   } else {
-    ok(`Browser: ${ua.slice(0, 40)}...`);
+    ok('Browser detected', ua.slice(0, 50));
   }
 
   // 3. Can we reach AMM health endpoint?
@@ -1855,12 +1898,12 @@ async function runNetworkDiagnostics() {
     clearTimeout(timer);
     if (res.ok) {
       const data = await res.json();
-      ok(`Health endpoint reachable`, JSON.stringify(data));
+      ok('Health endpoint reachable', JSON.stringify(data));
     } else {
-      fail(`Health endpoint HTTP ${res.status}`);
+      fail('Health endpoint HTTP error', `status=${res.status}`);
     }
   } catch (e) {
-    fail(`Health endpoint unreachable`, e.name === 'AbortError' ? 'Timeout' : e.message);
+    fail('Health endpoint unreachable', e.name === 'AbortError' ? 'Timeout (3s)' : e.message);
   }
 
   // 4. Can we reach AMM status endpoint?
@@ -1875,15 +1918,15 @@ async function runNetworkDiagnostics() {
     if (res.ok) {
       const data = await res.json();
       if (data.ready) {
-        ok(`Status endpoint: READY`, `model=${data.models?.vision || '?'}`);
+        ok('Status endpoint: READY', `model=${data.models?.vision || '?'}`);
       } else {
-        fail(`Status endpoint: model not loaded`, `Load a vision model in AMM Vision Hub`);
+        fail('Status endpoint: model not loaded', 'Load a vision model in AMM Vision Hub');
       }
     } else {
-      fail(`Status endpoint HTTP ${res.status}`);
+      fail('Status endpoint HTTP error', `status=${res.status}`);
     }
   } catch (e) {
-    fail(`Status endpoint unreachable`, e.name === 'AbortError' ? 'Timeout' : e.message);
+    fail('Status endpoint unreachable', e.name === 'AbortError' ? 'Timeout (3s)' : e.message);
   }
 
   // 5. CORS preflight check
@@ -1900,20 +1943,48 @@ async function runNetworkDiagnostics() {
     if (allowPrivate) {
       ok('CORS preflight OK', 'Access-Control-Allow-Private-Network: true');
     } else {
-      fail('CORS preflight missing', 'Access-Control-Allow-Private-Network header not found');
+      fail('CORS preflight missing PNA header', 'AMM server may need update');
     }
   } catch (e) {
-    fail('CORS preflight failed', e.message);
+    fail('CORS preflight failed', e.name === 'AbortError' ? 'Timeout (3s)' : e.message);
   }
 
   // 6. AMM state from probe
   if (state.amm) {
-    ok('probeAMM() state', `ready=true, model=${state.amm.models?.vision || '?'}`);
+    ok('probeAMM() state OK', `ready=true, model=${state.amm.models?.vision || '?'}`);
   } else {
-    fail('probeAMM() state', 'AMM not detected (run Re-detect after starting service)');
+    fail('probeAMM() state', 'AMM not detected');
   }
 
-  out.textContent = results.join('\n') + '\n\nDone.';
+  // 7. JS Bridge check
+  if (window.AMMBridge) {
+    ok('AMM JS Bridge available', 'Bypasses HTTP/PNA issues entirely');
+  } else {
+    fail('AMM JS Bridge not found', 'Update AMM app to v1.1.4+ for bridge support');
+  }
+
+  // Summary
+  const fails = results.filter(r => r.startsWith('❌')).length;
+  const summary = fails === 0
+    ? '\n✅ All checks passed. AMM is ready!'
+    : `\n⚠️ ${fails} check(s) failed.`;
+  const workaround = isHttps
+    ? '\n\n💡 WORKAROUND: You are on HTTPS. Chrome PNA may block localhost.\n   Try: Open this page inside AMM Browser (which uses a WebView bridge)\n   or serve BPLog over plain HTTP on your local network.'
+    : '';
+
+  body.textContent = results.join('\n') + summary + workaround;
+
+  closeBtn?.addEventListener('click', () => overlay.classList.remove('active'));
+  copyBtn?.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(body.textContent);
+      copyBtn.textContent = '✅ Copied!';
+      setTimeout(() => copyBtn.textContent = '📋 Copy', 1500);
+    } catch (err) {
+      copyBtn.textContent = '❌ Failed';
+      setTimeout(() => copyBtn.textContent = '📋 Copy', 1500);
+    }
+  });
 }
 
 // =================== Init ===================
