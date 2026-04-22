@@ -1354,3 +1354,92 @@ ERROR: Cannot read properties of undefined (reading 'width')
 - `test-ocr-*.jpg` / `test-ocr2-*.jpg` — preprocessed image artifacts for inspection
 - `test-ocr-results.json` / `test-ocr2-results.json` — structured result data
 
+
+---
+
+## AMM Detection Error Root Cause Analysis — 2026-04-22
+
+### Symptom (from debug console)
+```
+10:32:21 PM [AMM] Probe failed: Failed to fetch
+10:32:21 PM [AMM] Not detected. To use vision OCR:
+10:32:21 PM   1. Open AMM app → Vision Hub
+10:32:21 PM   2. Load a vision model (Qwen2-VL or ...)
+❌ Page is HTTPS: Mixed-content may block HTTP localhost
+✅ WebView detected
+❌ Health endpoint unreachable: Failed to fetch
+❌ Status endpoint unreachable: Failed to fetch
+❌ CORS preflight failed: Failed to fetch
+❌ probeAMM() state: AMM not detected (run Re-detect after starting service)
+```
+
+### Root Cause Table
+
+| # | Symptom | Root Cause | Fix Applied |
+|---|---------|-----------|-------------|
+| 1 | `Page is HTTPS: Mixed-content may block HTTP localhost` | bp-app is served from `https://comfac-global-group.github.io/bp-app/`. Chrome's Private Network Access (PNA) rules require a CORS preflight for any HTTPS page calling `http://127.0.0.1:*`. | **Mitigated** by JS bridge (`AMMBridge`) — bypasses HTTP entirely. HTTP endpoints remain for external browsers only. |
+| 2 | `Health endpoint unreachable: Failed to fetch` | The HTTPS→HTTP fetch never completes. Chrome silently drops the request at the network layer before it reaches AMM's NanoHTTPD server. | **Mitigated** by JS bridge. `HttpService.kt` does expose `/health` and it works when called from HTTP origins or via native code. |
+| 3 | `Status endpoint unreachable: Failed to fetch` | Same PNA block as above on `/v1/status`. | **Mitigated** by JS bridge. Endpoint exists and returns correct contract JSON. |
+| 4 | `CORS preflight failed: Failed to fetch` | The `OPTIONS` preflight request is blocked by Chrome PNA before AMM can respond with `Access-Control-Allow-Private-Network: true`. | **Mitigated** by JS bridge. `HttpService.kt` DOES return the correct PNA header, but the browser never lets the request leave the renderer. |
+| 5 | `probeAMM() state: AMM not detected` | All probe paths failed. `window.AMMBridge` was missing (user opened bp-app in external Chrome), and HTTP fallback was blocked by PNA. | **Fixed in AMM v1.1.4** — `BrowserActivity` now exposes full `AMMBridge` with `ammVisionInfer()`, `isHttpServiceRunning()`, `isVisionModelLoaded()`, `getLoadedModelName()`. |
+
+### Why the Errors Still Appear for Some Users
+
+These errors appear when bp-app is opened in **an external browser** (Chrome, Firefox, Safari) rather than inside AMM's embedded browser. The correct usage path is:
+
+1. Open AMM Android app
+2. Download and load a vision model in Vision Hub
+3. Start HTTP service (or just load model — bridge works either way)
+4. From Chat screen, open drawer → tap **🩺 BP Log**
+5. BP Log opens inside AMM's browser with `window.AMMBridge` available
+
+If the user opens `https://comfac-global-group.github.io/bp-app/` directly in Chrome:
+- `window.AMMBridge` does not exist
+- Fallback HTTP probes hit PNA wall
+- All diagnostics fail
+
+This is **expected behavior**, not a bug. The JS bridge is an AMM-specific API; it cannot exist outside the AMM app.
+
+### AMM Browser Engine Migration: WebView → GeckoView
+
+**Date:** 2026-04-22  
+**Engine change:** Chromium WebView → Firefox GeckoView  
+**Files changed:**
+- `android-matrix-model/settings.gradle.kts` — added Mozilla Maven repository
+- `android-matrix-model/app/build.gradle.kts` — added GeckoView dependencies (all architectures)
+- `android-matrix-model/app/src/main/java/.../browser/BrowserActivity.kt` — full rewrite for GeckoView
+- `android-matrix-model/app/src/main/java/.../bpapp/BpAppWebViewActivity.kt` — **removed** (dead code, never launched)
+- `android-matrix-model/app/src/main/AndroidManifest.xml` — removed `BpAppWebViewActivity` declaration
+- `bp-app/app.js` — diagnostics now detect GeckoView and Firefox
+
+**Motivation:**
+- GeckoView is fully isolated from the system Chrome profile (better privacy)
+- GeckoView's PNA/mixed-content policies differ from Chrome, potentially reducing localhost friction
+- Consistent engine version across all Android versions (WebView varies by OEM/Chrome version)
+- Mozilla's engine aligns with AMM's open-source, privacy-first ethos
+
+**JS Bridge Strategy:**
+GeckoView does not have `addJavascriptInterface`. We inject `window.AMMBridge` via a `javascript:` URL and intercept `window.prompt('amm-bridge', ...)` calls in `PromptDelegate`. This preserves the **exact same API** that bp-app uses, with zero changes to bp-app.
+
+**Trade-offs:**
+- APK size increases by ~40–60 MB per architecture (GeckoView bundles its own engine)
+- Slightly higher memory footprint (independent process)
+- `window.prompt()` bridge is a well-known workaround; WebExtension-based bridge can be explored later for cleaner architecture
+
+### QA Verification Steps (After GeckoView Migration)
+
+1. Build AMM APK with GeckoView
+2. Install on Android device
+3. Download Qwen2.5-VL-3B in Vision Hub → load model
+4. Open Chat → drawer → 🩺 BP Log
+5. **Expected:** Settings shows green "AMM detected" pill
+6. Tap "Run Network Diagnostics" in Settings
+7. **Expected:**
+   - ✅ Browser is GeckoView (Firefox)
+   - ✅ AMM JS Bridge available
+   - ✅ probeAMM() state OK
+   - Health/Status/CORS checks may still show ❌ (these test HTTP path, which PNA blocks — this is OK as long as JS bridge is ✅)
+8. Take BP monitor photo
+9. **Expected:** OCR runs via `AMMBridge.ammVisionInfer()` → values appear in review screen
+
+---

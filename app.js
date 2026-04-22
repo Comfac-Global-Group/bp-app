@@ -1875,14 +1875,20 @@ async function runNetworkDiagnostics() {
     ok('Page is HTTP (no mixed-content risk)');
   }
 
-  // 2. User agent / WebView detection
+  // 2. User agent / browser engine detection
   const ua = navigator.userAgent;
   const isWebView = /wv|WebView/.test(ua);
   const isChrome = /Chrome/.test(ua) && !isWebView;
-  if (isWebView) {
-    ok('Browser is WebView', 'AMM Browser embedded WebView');
+  const isFirefox = /Firefox/.test(ua) || /Gecko/.test(ua);
+  const isGeckoView = isFirefox && window.AMMBridge;
+  if (isGeckoView) {
+    ok('Browser is GeckoView (Firefox)', 'AMM Browser embedded Firefox engine');
+  } else if (isWebView) {
+    ok('Browser is WebView (Chrome)', 'AMM Browser embedded Chrome engine');
   } else if (isChrome) {
     ok('Browser is Chrome');
+  } else if (isFirefox) {
+    ok('Browser is Firefox');
   } else {
     ok('Browser detected', ua.slice(0, 50));
   }
@@ -1969,7 +1975,7 @@ async function runNetworkDiagnostics() {
     ? '\n✅ All checks passed. AMM is ready!'
     : `\n⚠️ ${fails} check(s) failed.`;
   const workaround = isHttps
-    ? '\n\n💡 WORKAROUND: You are on HTTPS. Chrome PNA may block localhost.\n   Try: Open this page inside AMM Browser (which uses a WebView bridge)\n   or serve BPLog over plain HTTP on your local network.'
+    ? '\n\n💡 WORKAROUND: You are on HTTPS. Browser PNA may block localhost.\n   Try: Open this page inside AMM Browser (uses JS bridge, no HTTP needed)\n   or serve BPLog over plain HTTP on your local network.'
     : '';
 
   body.textContent = results.join('\n') + summary + workaround;
