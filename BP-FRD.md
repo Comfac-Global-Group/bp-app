@@ -618,6 +618,113 @@ These features are explicitly **not in v1.3** but are tracked for future release
 | 2026-04-20 | Client-side confidence, not model-reported | Range checks + pulse-pressure sanity are more reliable than a 1–3 GB VLM self-assessing "high|medium|low" |
 | 2026-04-20 | 7-seg template matcher is a real fallback tier | ~80% accuracy, zero network, <1s — deserves a UI slot between "VLM failed" and "type it yourself" |
 | 2026-04-20 | ocrad.js removed from engine ladder | 0/11 full-match across 843+ combinations. Traditional OCR is dead on 7-segment LCDs. Template matcher replaces it as the practical fallback |
+| 2026-04-22 | Migrated AMM browser from WebView (Chrome) to GeckoView (Firefox) | GeckoView is isolated from system Chrome, has different PNA policies, and aligns with privacy-first ethos. JS bridge uses `window.prompt()` interception because GeckoView has no `addJavascriptInterface` |
+| 2026-04-22 | AMM JS bridge is primary path; HTTP is fallback only | Bridge bypasses all CORS/PNA/mixed-content issues entirely. HTTP endpoints exist only for external browsers and debugging |
+
+---
+
+## 23. AMM Integration & JS Bridge Specification
+
+### 23.1 Architecture
+
+BPLog runs inside AMM in two possible contexts:
+
+| Context | Engine | `window.AMMBridge` | Network Path |
+|---------|--------|-------------------|--------------|
+| **Inside AMM Browser** (Chat drawer → 🩺 BP Log) | GeckoView (Firefox) | ✅ Injected automatically | JS bridge — **zero HTTP** |
+| **External browser** (Chrome, Safari, Firefox app) | System browser | ❌ Missing | HTTPS→HTTP fetch — **blocked by PNA** |
+
+**Key principle:** When `window.AMMBridge` is present, BPLog must **never** call `fetch()` to localhost. The bridge runs inference on the native thread via `VisionLMManager.infer()` directly.
+
+### 23.2 Detection Ladder (`probeAMM()`)
+
+```javascript
+async function probeAMM() {
+  // Tier 1: JS bridge (preferred — no network, no PNA)
+  if (window.AMMBridge) {
+    const isRunning = window.AMMBridge.isHttpServiceRunning();
+    const isLoaded  = window.AMMBridge.isVisionModelLoaded();
+    const modelName = window.AMMBridge.getLoadedModelName();
+    if (isRunning && isLoaded) {
+      return { ready: true, models: { vision: modelName }, mode: 'bridge' };
+    }
+  }
+  // Tier 2: HTTP fallback (only works on HTTP origins or permissive browsers)
+  try {
+    const res = await fetch('http://127.0.0.1:8765/v1/status', { mode: 'cors' });
+    const data = await res.json();
+    if (data.ready) return { ...data, mode: 'http' };
+  } catch (e) { /* expected failure on HTTPS */ }
+  return null;
+}
+```
+
+### 23.3 Bridge API Contract
+
+**Interface name:** `window.AMMBridge`  
+**Injection method:** Injected by AMM BrowserActivity via `javascript:` URL after `onPageStop`  
+**Communication mechanism (GeckoView):** `window.prompt('amm-bridge', payload)` intercepted by `PromptDelegate.onTextPrompt`
+
+| Method | Arguments | Return | Description |
+|--------|-----------|--------|-------------|
+| `isEmbedded()` | — | `boolean` | Always `true` |
+| `getAmmVersion()` | — | `string` | e.g., `"1.1.4"` |
+| `isHttpServiceRunning()` | — | `boolean` | Reads `HttpService.isRunning` |
+| `isVisionModelLoaded()` | — | `boolean` | Reads `VisionLMManager.isModelLoaded` |
+| `getLoadedModelName()` | — | `string` | Reads `VisionLMManager.loadedModelName` |
+| `ammVisionInfer(base64Image, prompt)` | `base64Image`: JPEG as base64 string<br>`prompt`: VLM prompt string | `string` (JSON) | Runs inference natively. Returns JSON string: `{ success, response, tokens_per_sec, context_used, error? }` |
+
+**Example inference call:**
+```javascript
+const jsonStr = window.AMMBridge.ammVisionInfer(
+  dataUrl.split(',')[1],  // strip "data:image/jpeg;base64,"
+  'Read the three numbers on this blood pressure monitor. Return JSON: {"sys":<top>,"dia":<middle>,"bpm":<bottom>}'
+);
+const result = JSON.parse(jsonStr);
+if (result.success) {
+  const values = parseAmmResponse(result); // → { sys, dia, hr }
+}
+```
+
+### 23.4 HTTP Fallback Contract (for external browsers)
+
+**Base URL:** `http://127.0.0.1:8765`
+
+| Endpoint | Method | Request | Response |
+|----------|--------|---------|----------|
+| `/v1/status` | GET | — | `{ version, ready, capabilities, models, queue_depth, inference_mode }` |
+| `/v1/vision/completions` | POST | `multipart/form-data`: `image` (file), `prompt` (text) | `{ success, response, tokens_per_sec, context_used, error? }` |
+| `/health` | GET | — | `{ status: "ok" }` |
+| `/status` | GET | — | `{ vision_model_loaded, model_name }` (legacy) |
+
+**Required CORS headers for HTTPS→loopback:**
+```
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type
+Access-Control-Allow-Private-Network: true   ← Chrome PNA requirement
+```
+
+### 23.5 Known Limitations
+
+| Scenario | Behavior | Workaround |
+|----------|----------|------------|
+| BPLog opened in Chrome (external) | `window.AMMBridge` missing; HTTP fetch blocked by PNA | Open BPLog from AMM Chat drawer |
+| BPLog opened in Safari iOS | HTTPS→loopback is **never** permitted by Apple | Use AMM Browser (JS bridge) or switch to HTTP origin |
+| AMM HTTP service off, model loaded | Bridge still works; `isHttpServiceRunning()` returns `false` but inference succeeds | Bridge does not require HTTP service |
+| No vision model loaded in AMM | Bridge available but `isVisionModelLoaded()` = `false` | Load a model in AMM Vision Hub |
+
+### 23.6 Verification Steps (QA)
+
+1. Install AMM APK → Vision Hub → download Qwen2.5-VL-3B → load model
+2. Chat drawer → 🩺 BP Log
+3. Settings → "Run Network Diagnostics"
+4. **Expected:**
+   - ✅ Browser is GeckoView (Firefox)
+   - ✅ AMM JS Bridge available
+   - ✅ probeAMM() state OK
+   - Health/Status/CORS may show ❌ (these test HTTP path; expected on HTTPS)
+5. Take BP monitor photo → OCR review screen auto-populates values
 
 ---
 
