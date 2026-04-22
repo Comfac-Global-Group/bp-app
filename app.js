@@ -1741,10 +1741,9 @@ async function probeAMM() {
   // Prefer JS bridge (no HTTP/PNA issues)
   if (window.AMMBridge) {
     try {
-      const isRunning = window.AMMBridge.isHttpServiceRunning && window.AMMBridge.isHttpServiceRunning();
       const isLoaded = window.AMMBridge.isVisionModelLoaded && window.AMMBridge.isVisionModelLoaded();
       const modelName = window.AMMBridge.getLoadedModelName && window.AMMBridge.getLoadedModelName() || 'unknown';
-      if (isRunning && isLoaded) {
+      if (isLoaded) {
         console.log('[AMM] Bridge probe success:', modelName);
         return {
           version: window.AMMBridge.getAmmVersion ? window.AMMBridge.getAmmVersion() : '1.1.4',
@@ -1755,7 +1754,7 @@ async function probeAMM() {
           inference_mode: 'local',
         };
       }
-      console.warn('[AMM] Bridge probe: service=', isRunning, 'model=', isLoaded);
+      console.warn('[AMM] Bridge probe: vision model not loaded. Load a model in AMM Vision Hub.');
     } catch (e) {
       console.warn('[AMM] Bridge probe error:', e.message || e);
     }
@@ -1955,18 +1954,29 @@ async function runNetworkDiagnostics() {
     fail('CORS preflight failed', e.name === 'AbortError' ? 'Timeout (3s)' : e.message);
   }
 
-  // 6. AMM state from probe
+  // 6. JS Bridge check
+  if (window.AMMBridge) {
+    ok('AMM JS Bridge available', 'Bypasses HTTP/PNA issues entirely');
+    try {
+      const isLoaded = window.AMMBridge.isVisionModelLoaded && window.AMMBridge.isVisionModelLoaded();
+      const modelName = window.AMMBridge.getLoadedModelName && window.AMMBridge.getLoadedModelName() || 'unknown';
+      if (isLoaded) {
+        ok('Vision model loaded', modelName);
+      } else {
+        fail('Vision model not loaded', 'Open AMM → Vision Hub → load a vision model');
+      }
+    } catch (e) {
+      fail('Bridge vision check error', e.message || e);
+    }
+  } else {
+    fail('AMM JS Bridge not found', 'Update AMM app to v1.1.4+ for bridge support');
+  }
+
+  // 7. AMM state from probe
   if (state.amm) {
     ok('probeAMM() state OK', `ready=true, model=${state.amm.models?.vision || '?'}`);
   } else {
     fail('probeAMM() state', 'AMM not detected');
-  }
-
-  // 7. JS Bridge check
-  if (window.AMMBridge) {
-    ok('AMM JS Bridge available', 'Bypasses HTTP/PNA issues entirely');
-  } else {
-    fail('AMM JS Bridge not found', 'Update AMM app to v1.1.4+ for bridge support');
   }
 
   // Summary
@@ -1974,9 +1984,11 @@ async function runNetworkDiagnostics() {
   const summary = fails === 0
     ? '\n✅ All checks passed. AMM is ready!'
     : `\n⚠️ ${fails} check(s) failed.`;
-  const workaround = isHttps
-    ? '\n\n💡 WORKAROUND: You are on HTTPS. Browser PNA may block localhost.\n   Try: Open this page inside AMM Browser (uses JS bridge, no HTTP needed)\n   or serve BPLog over plain HTTP on your local network.'
-    : '';
+  const bridgeAvailable = !!window.AMMBridge;
+  const bridgeWorkaround = bridgeAvailable
+    ? '\n\n💡 Bridge is connected but AMM is not ready.\n   Open AMM → Vision Hub → load a vision model (e.g., Qwen2.5-VL-3B).'
+    : '\n\n💡 WORKAROUND: You are on HTTPS. Browser PNA may block localhost.\n   Try: Open this page inside AMM Browser (uses JS bridge, no HTTP needed)\n   or serve BPLog over plain HTTP on your local network.';
+  const workaround = isHttps ? bridgeWorkaround : '';
 
   body.textContent = results.join('\n') + summary + workaround;
 
