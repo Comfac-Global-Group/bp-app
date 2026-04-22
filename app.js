@@ -1598,6 +1598,11 @@ document.getElementById('btn-amm-redetect')?.addEventListener('click', async () 
   loadSettings();
 });
 
+document.getElementById('btn-run-diagnostics')?.addEventListener('click', () => {
+  console.log('[Diagnostics] Starting network diagnostics...');
+  runNetworkDiagnostics();
+});
+
 // =================== Modal / Loading ===================
 function showModal(message, onConfirm) {
   document.getElementById('modal-body').textContent = message;
@@ -1806,6 +1811,109 @@ async function runAmmVision(dataUrl, prompt) {
     algo: 'amm-vision',
     rawText: text,
   };
+}
+
+// =================== Diagnostics ===================
+async function runNetworkDiagnostics() {
+  const out = document.getElementById('diagnostics-output');
+  if (!out) return;
+  out.style.display = 'block';
+  out.textContent = 'Running diagnostics...\n';
+
+  const results = [];
+  const ok = (label) => { results.push(`✅ ${label}`); };
+  const fail = (label, detail) => { results.push(`❌ ${label}${detail ? ': ' + detail : ''}`); };
+
+  // 1. Protocol check
+  const isHttps = location.protocol === 'https:';
+  if (isHttps) {
+    fail('Page is HTTPS', 'Mixed-content may block HTTP localhost');
+  } else {
+    ok('Page is HTTP (no mixed-content risk)');
+  }
+
+  // 2. User agent / WebView detection
+  const ua = navigator.userAgent;
+  const isWebView = /wv|WebView/.test(ua);
+  const isChrome = /Chrome/.test(ua) && !isWebView;
+  if (isWebView) {
+    ok(`WebView detected`);
+  } else if (isChrome) {
+    ok(`Chrome detected`);
+  } else {
+    ok(`Browser: ${ua.slice(0, 40)}...`);
+  }
+
+  // 3. Can we reach AMM health endpoint?
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch('http://127.0.0.1:8765/health', {
+      signal: controller.signal,
+      mode: 'cors',
+    });
+    clearTimeout(timer);
+    if (res.ok) {
+      const data = await res.json();
+      ok(`Health endpoint reachable`, JSON.stringify(data));
+    } else {
+      fail(`Health endpoint HTTP ${res.status}`);
+    }
+  } catch (e) {
+    fail(`Health endpoint unreachable`, e.name === 'AbortError' ? 'Timeout' : e.message);
+  }
+
+  // 4. Can we reach AMM status endpoint?
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch('http://127.0.0.1:8765/v1/status', {
+      signal: controller.signal,
+      mode: 'cors',
+    });
+    clearTimeout(timer);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.ready) {
+        ok(`Status endpoint: READY`, `model=${data.models?.vision || '?'}`);
+      } else {
+        fail(`Status endpoint: model not loaded`, `Load a vision model in AMM Vision Hub`);
+      }
+    } else {
+      fail(`Status endpoint HTTP ${res.status}`);
+    }
+  } catch (e) {
+    fail(`Status endpoint unreachable`, e.name === 'AbortError' ? 'Timeout' : e.message);
+  }
+
+  // 5. CORS preflight check
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch('http://127.0.0.1:8765/v1/status', {
+      method: 'OPTIONS',
+      signal: controller.signal,
+      mode: 'cors',
+    });
+    clearTimeout(timer);
+    const allowPrivate = res.headers.get('Access-Control-Allow-Private-Network');
+    if (allowPrivate) {
+      ok('CORS preflight OK', 'Access-Control-Allow-Private-Network: true');
+    } else {
+      fail('CORS preflight missing', 'Access-Control-Allow-Private-Network header not found');
+    }
+  } catch (e) {
+    fail('CORS preflight failed', e.message);
+  }
+
+  // 6. AMM state from probe
+  if (state.amm) {
+    ok('probeAMM() state', `ready=true, model=${state.amm.models?.vision || '?'}`);
+  } else {
+    fail('probeAMM() state', 'AMM not detected (run Re-detect after starting service)');
+  }
+
+  out.textContent = results.join('\n') + '\n\nDone.';
 }
 
 // =================== Init ===================
