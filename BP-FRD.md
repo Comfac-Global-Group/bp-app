@@ -1,12 +1,12 @@
 # BP-FRD — BPLog Functional Requirements Document
-**Version:** 1.2 | **Status:** Ready for Build | **Domain:** bp.comfac-it.com
-**Author:** Justin / CGG R&D | **Date:** 2026-04-14
+**Version:** 1.3 | **Status:** Ready for Build | **Domain:** bp.comfac-it.com
+**Author:** Justin / CGG R&D | **Date:** 2026-04-20
 
 ---
 
 ## 1. Overview
 
-BPLog is a self-hosted Progressive Web App (PWA) for capturing and logging blood pressure readings from photos. **ocrad.js** (pure JavaScript) performs OCR entirely on-device. All data — images, logs, charts, PDF generation — stays local. No data is ever transmitted to any external server.
+BPLog is a self-hosted Progressive Web App (PWA) for capturing and logging blood pressure readings from photos. Images are sent to **vision-language models** — **Android Matrix Model (AMM)** for fully offline on-device inference, **local Ollama**, or any **OpenAI-compatible API** — for structured extraction of systolic, diastolic, and heart-rate values. A **browser-based 7-segment template matcher** serves as a zero-network fallback when no VLM is available. Manual entry is always available as the final fallback. All data — images, logs, charts, PDF generation — stays local unless the user explicitly chooses a remote API. No data is ever transmitted to any external server without explicit user configuration.
 
 **Deployment target:** Static file bundle behind NPM on PC03 → `bp.comfac-it.com`
 
@@ -16,7 +16,7 @@ BPLog is a self-hosted Progressive Web App (PWA) for capturing and logging blood
 
 ### Goals
 - Frictionless photo-to-log workflow (camera capture or gallery upload)
-- On-device OCR extraction of systolic, diastolic, heart rate
+- Vision-language model extraction of systolic, diastolic, heart rate (AMM / Ollama / API), with 7-segment template matcher fallback
 - Multi-user support with local user profile selector
 - Self-hosted, mobile-first, fully offline-capable after first load
 - Image storage with optional bulk cleanup
@@ -27,7 +27,7 @@ BPLog is a self-hosted Progressive Web App (PWA) for capturing and logging blood
 - **Night / dark theme** option for low-light usage
 - **Clear landing instructions** for saving to home screen and understanding local-only storage
 
-### Non-Goals (v1.2)
+### Non-Goals (v1.3)
 - Cloud sync or remote backend
 - Medical advice, diagnosis, clinical decision support
 - Automated medication reminders
@@ -81,18 +81,35 @@ BPLog is a self-hosted Progressive Web App (PWA) for capturing and logging blood
 
 ### 4.3 OCR Processing
 
-#### Library
-**ocrad.js** (pure JavaScript, ~300 KB) — runs entirely on-device with no WASM workers. Replaced Tesseract.js v5 (WASM) to avoid service worker CORS restrictions and eliminate a ~6 MB WASM payload.
+#### Honest Assessment
+Traditional OCR (Tesseract.js, ocrad.js) achieves **0% full-match** on 7-segment LCD blood pressure monitors. 843+ preprocessing combinations were tested (scale, threshold, contrast, crop, sharpen, invert, histogram normalize, CLAHE) with zero success. The digits are too thin, contrast too low, and noise too high for engines trained on printed/antialiased text.
+
+**Real engine ladder:**
+1. Vision-language models (AMM, Ollama, OpenAI API)
+2. Browser-based 7-segment template matcher (~80% with manual ROI)
+3. Manual entry
 
 #### Pre-processing Pipeline
-1. Scale image UP to a minimum width of 1800 px (maintains aspect ratio) — larger canvas improves OCR digit accuracy on small LCD displays
-2. Convert to grayscale via `ImageData` luminance calculation
-3. Apply binary threshold at luminance 128 — pixels above → white, below → black
-4. Run two passes: normal (black-on-white) **and** inverted (white-on-black)
-5. Score both results and keep the higher-confidence extraction
+All images sent to VLMs are pre-processed as follows:
+
+1. **Rotate 90° clockwise** — critical unlock for larger models (Qwen 3.5 4B, Gemma 4). The "7" digit in DIA becomes distinguishable when rotated. In experiments, Gemma 4 went from 0/16 full-match (original) to 4/4 (rotate90).
+2. **Try both orientations** — send `rotate90` first; if client-side confidence is low, also try original and keep the better result. Smaller models (MedGemma, Qwen 0.8B) may prefer original orientation.
+3. **Contrast enhancement** (optional) — helps MedGemma on original orientation; not needed for rotate90 path with larger models.
+4. **Scale to minimum 1800 px width** — ensures LCD digits are large enough for the model to resolve.
+
+#### 7-Segment Template Matcher (Browser Fallback)
+A pure-JavaScript fallback when no VLM is available or all VLMs fail:
+
+- User draws a rectangle around the LCD display
+- Auto-tunes binary threshold for optimal contrast
+- Samples 7 segment zones (a-g) per digit and matches against known templates via Hamming distance
+- **Accuracy:** ~80% on tested samples with correct ROI
+- **Speed:** <1s, zero network, zero model download
+
+This is presented as a **"Couldn't read automatically — tap the display to help us"** screen after VLM engines fail. The user draws the LCD region; the matcher attempts extraction immediately.
 
 #### Known Device Layout — Omron HEM-7121
-The primary test device is the **Omron HEM-7121**, a wrist blood pressure monitor with an LCD display. Understanding its fixed label layout drives the extraction algorithm:
+The primary test device is the **Omron HEM-7121**, an upper-arm blood pressure monitor with an LCD display. Understanding its fixed label layout drives the extraction algorithm:
 
 ```
 ┌──────────────────────────────────┐
@@ -121,48 +138,93 @@ The primary test device is the **Omron HEM-7121**, a wrist blood pressure monito
 
 **Model number regex:** `/HEM[-\s]?\d{3,4}[A-Z]*/i` — matches HEM-7121, HEM7121, HEM-705, etc.
 
-#### Multi-Algorithm Extraction Pipeline
-The pipeline tries four algorithms in order of confidence, stopping at the first valid result:
-
-| Priority | Algorithm | Trigger | Example match |
-|----------|-----------|---------|---------------|
-| D (highest) | **Label-proximity** | Finds a number adjacent to `SYS` or `DIA` keyword in OCR text | `123 SYS` / `SYS 123` |
-| A | **Separator pattern** | Finds `NNN/NN` or `NNN\|NN` in text | `123/80` |
-| B | **Range + pulse pressure** | Picks candidates within physiological ranges (sys 90–220, dia 50–130) where `sys−dia` is 20–100 mmHg | — |
-| C (lowest) | **Range-only** | Falls back to first in-range systolic and diastolic candidates | — |
-
-**Validation rules applied to all algorithms:**
-- Systolic: 90–220 mmHg
-- Diastolic: 50–130 mmHg
-- Diastolic < Systolic
-- Pulse pressure (sys − dia): 20–100 mmHg
-
-**Heart rate detection:**
-- Label-proximity: extracts `Pulse/min`-adjacent number
-- Fallback: first number in range 40–180 not already assigned to sys/dia
-
 #### Device Detection
-`detectDevice(text)` scans the combined OCR text of both passes for brand and model strings:
+`detectDevice()` attempts to identify the monitor brand and model from VLM-extracted text or from the image itself:
 - Brand: keyword match (`omron`, `microlife`, `a&d`)
 - Model: regex match against `HEM-NNN`, `UA-NNN`, `BP-NNN` patterns
 
 If both brand and model are detected and readings are successfully extracted, a **green confirmation hint** is shown: `"Detected: Omron HEM-7121 — review values below."`
 
-If extraction fails, an **amber warning hint** shows up to 120 characters of raw OCR text to aid manual entry.
+If extraction fails, an **amber warning hint** offers the 7-segment template matcher or manual entry.
 
 #### Testing Plan
 OCR accuracy is inherently device-specific. Testing strategy:
 
-1. **Per-device test log** — photograph each supported monitor model (HEM-7121, HEM-705, UA-651, BP652) under good lighting; record algorithm that fired and extraction accuracy.
+1. **Per-device test log** — photograph each supported monitor model (HEM-7121, HEM-705, UA-651, BP652) under good lighting; record model, orientation (original vs rotate90), and extraction accuracy.
 2. **Edge-case photos** — low light, angled/glare shots, partial occlusion.
-3. **Algorithm fallback audit** — deliberately blur/crop photos to confirm graceful degradation: D → A → B → C → manual.
-4. **User correction rate** — track (via QA-log) how often users must edit OCR-extracted values before saving.
+3. **Model-size sweep** — larger models (Qwen 3.5 4B, Gemma 4) need rotate90; smaller models (MedGemma, Qwen 0.8B) may prefer original. Document which model/orientation pairs work.
+4. **Prompt A/B test** — before locking the default prompt, run the current 4-model leaderboard with (a) minimal prompt `"Read the monitor. Return JSON: {sys, dia, bpm}. No prose."` and (b) verbose range-describing prompt. Keep whichever wins.
+5. **User correction rate** — track (via QA-log) how often users must edit VLM-extracted values before saving.
 
-All extracted values remain **editable before save** — OCR is advisory, not authoritative.
+All extracted values remain **editable before save** — VLM extraction is advisory, not authoritative.
 
 #### EXIF Timestamp Extraction
 Via `exifr`. Fallback chain: `DateTimeOriginal → CreateDate → DateTime → DateTimeDigitized → Date.now()`.
 Displayed in an editable `<input type="datetime-local">` with source label `(from photo EXIF)` or `(now — no EXIF)`. User can correct before saving.
+
+#### External Vision-Language Model Engines
+BPLog sends images to vision-language model (VLM) endpoints for structured extraction of systolic, diastolic, and heart-rate values.
+
+**Supported endpoints:**
+
+| Engine | Connection | Requirements | Best For |
+|--------|-----------|--------------|----------|
+| **AMM (Android Matrix Model)** | HTTP `127.0.0.1:8765` | AMM installed and running on the same phone | Fully offline, on-device VLM inference |
+| **Local Ollama** | HTTP `localhost:11434` (configurable) | Ollama running on phone (Termux) or same LAN | Users who already run Ollama locally |
+| **OpenAI-compatible API** | Any HTTPS endpoint + API key | Internet connection + valid API key | Highest accuracy when offline is not required |
+
+**Default prompt (editable):**
+
+> Read the blood pressure monitor. Return JSON: {sys, dia, bpm}. No prose.
+
+The prompt is **pre-filled but fully editable** by the user before sending. Experiments show minimal prompts outperform verbose ones for 7-segment LCD extraction. Users can adjust for their device. Edited prompts are remembered per-session and can be reset to default.
+
+**A/B test before locking:** Run the 4-model leaderboard (Qwen 3.5 4B, Gemma 4, MedGemma, Qwen 0.8B) with (a) the minimal prompt above and (b) a verbose range-describing prompt. Keep whichever wins.
+
+**Engine selection priority (configurable in Settings):**
+
+1. **AMM** — probed at app startup via `GET http://127.0.0.1:8765/v1/status`; if `ready: true`, use it (best accuracy, fully offline).
+2. **Ollama** — probed at `GET /api/tags`; if a vision model is loaded, use it.
+3. **OpenAI-compatible API** — used if API key is configured and `navigator.onLine === true`.
+4. **7-segment template matcher** — presented when all VLMs fail; user draws LCD ROI.
+5. **Manual entry** — user types values if all engines fail or are disabled.
+
+**Request shape (AMM / Ollama / OpenAI):**
+
+```js
+const body = {
+  image: "<base64-jpg>",           // JPEG, max 1920px on long edge
+  prompt: userPrompt || defaultPrompt,
+  temperature: 0.1,                // low creativity for extraction
+  max_tokens: 256
+};
+```
+
+**Response handling:**
+- Raw text is parsed for three numbers; JSON extraction attempted if the model returns JSON.
+- If parsing fails, a single retry with an appended instruction: `"Return valid JSON only. No markdown, no prose."`
+- If the retry also fails, offer the 7-segment template matcher or manual entry.
+- All VLM-extracted values remain **editable before save** — the VLM is advisory, not authoritative.
+
+**Client-side confidence derivation (not model-reported):**
+Confidence is computed from the extracted values, not from a VLM self-assessment string:
+
+| Check | Rule |
+|-------|------|
+| SYS range | 90–220 mmHg |
+| DIA range | 50–130 mmHg |
+| BPM range | 40–180 bpm |
+| DIA < SYS | Always |
+| Pulse pressure | 20–100 mmHg (SYS − DIA) |
+
+**Confidence badge:**
+- **Green** — all checks pass
+- **Amber** — one check fails
+- **Red** — two+ checks fail or a value is null
+
+This is more reliable than asking a 1–3 GB VLM to self-report confidence.
+
+**Privacy note:** AMM runs entirely on-device; Ollama on Termux is also on-device. Only the OpenAI-compatible path leaves the phone, and only if the user explicitly configures it.
 
 ### 4.4 Log Entry Schema
 ```json
@@ -400,7 +462,9 @@ BPLog supports a user-configurable dark mode for low-light usage.
 | Layer | Choice | Rationale |
 |-------|--------|-----------|
 | Framework | Vanilla JS + Web Components (or Preact) | No build step; lightweight; small bundle |
-| OCR | ocrad.js | Pure JS ~300 KB; fully on-device; no WASM workers; replaced Tesseract.js to avoid SW CORS issues |
+| OCR / VLM | AMM / Ollama / OpenAI API | Vision-language models for 7-segment LCD extraction; minimal prompts work best |
+| OCR fallback | 7-seg template matcher | Pure JS, zero network, ~80% accuracy with user-drawn LCD ROI |
+| OCR baseline | ocrad.js | Retained in bundle for legacy; 0% observed accuracy on 7-segment LCDs |
 | Storage | IndexedDB via `idb` wrapper | Blob support for images; no storage limit beyond device |
 | ZIP | JSZip | Client-side ZIP; no server |
 | EXIF | exifr | Lightweight; reads `DateTimeOriginal` |
@@ -409,7 +473,7 @@ BPLog supports a user-configurable dark mode for low-light usage.
 | Styling | Custom CSS | Full control; minimal footprint |
 | Hosting | Static files — Nginx / Forgejo Pages | Behind NPM on PC03 |
 
-> **Bundle size estimate:** ~500–700 KB after minification (ocrad.js ~300 KB is the largest single asset; CDN assets cached by Service Worker after first load).
+> **Bundle size estimate:** ~500–800 KB after minification (ocrad.js ~300 KB retained for legacy; 7-seg template matcher ~50 KB; CDN assets cached by Service Worker after first load).
 
 ---
 
@@ -419,13 +483,13 @@ BPLog supports a user-configurable dark mode for low-light usage.
 |--------|-------------|
 | User Select | Avatar card row, add/rename/delete user |
 | Home / Capture | Landing instruction card, Take Photo, Upload Photo, recent 5 entries with tags + note preview |
-| OCR Preview | Image preview, editable sys/dia/HR fields, note input, tag input, machine brand, save |
+| OCR Preview | Image preview, editable sys/dia/HR fields, note input, tag input, machine brand, rotate90 toggle, save |
 | Log List | **User + date-range header**, infinite scroll, filter bar (date + tag chips + category), inline note/tag edit on tap |
 | Entry Detail | Full image, all fields, complete note, all tags, edit and delete |
 | Reports | Date range + tag filter config, interactive Chart.js charts, tag analytics table, Generate PDF |
 | Image Manager | Storage gauge, image list with size + entry link, bulk delete, delete orphans |
 | Export / Import | Per-user export buttons (JSON / ZIP / Combined / PDF), import picker + conflict strategy |
-| Settings | User profile (name, DOB, physician), **Dark mode toggle**, **Version badge**, Install PWA, storage info |
+| Settings | User profile (name, DOB, physician), **Dark mode toggle**, **Version badge**, Install PWA, storage info, **VLM engine priority**, **default prompt editor**, **template matcher toggle**, API key management |
 
 ---
 
@@ -494,7 +558,7 @@ Recommended sequencing for incremental build and testing:
 
 ## 17. Offline / Local Status
 
-### 16.1 Status Indicator
+### 17.1 Status Indicator
 - A small **"Local / Offline"** pill appears in the header whenever `navigator.onLine === false`.
 - When online, the indicator is hidden (the app functions identically either way).
 - Reinforces the privacy promise: the app works fully without a connection.
@@ -503,13 +567,13 @@ Recommended sequencing for incremental build and testing:
 
 ## 18. Landing Instructions & Disclaimer
 
-### 17.1 Home Screen Instruction Card
+### 18.1 Home Screen Instruction Card
 - A dismissible card on the Home screen explains:
   - "To use BPLog like an app, open your browser menu and choose **Add to Home Screen** (or **Install**)."
   - "This site will not save your settings — only your device will. All data stays on this device."
 - This sets expectations for first-time visitors using the web version.
 
-### 17.2 Medical Disclaimer
+### 18.2 Medical Disclaimer
 - A disclaimer modal is shown **once per device** on first load (tracked via `localStorage`).
 - Text:
   > **This is not a medical app.** BPLog is a personal logging tool. It does not provide diagnosis, medical advice, or clinical decision support. Always consult a qualified healthcare professional for medical concerns.
@@ -518,26 +582,43 @@ Recommended sequencing for incremental build and testing:
 
 ---
 
-## 19. Planning Stage Features
+## 19. LLM-Based Image Extraction (AMM / VLM Integration)
 
-| Feature | Description | Status | Notes |
-|---------|-------------|--------|-------|
-| LLM-based Image Extraction | A way people can upload their BP pictures without any information for future filling up. Connect to a Model (either ollama, deepseek, openai) for image information extraction. Various prompts are used to look for SYS/DIA/BPM and then encoded. This is an option to toggle since the 7-step solution has a low chance of succeeding. | Open (datetime-deepseek) | We are in the planning stage. |
+BPLog supports sending BP-monitor photos to vision-language models for structured extraction of systolic, diastolic, and heart-rate values. This is implemented as a **configurable engine tier** rather than a separate feature — all details (supported providers, pre-processing with rotate90, 7-segment template matcher fallback, client-side confidence derivation, minimal prompt spec, and request/response format) are documented in §4.3 "External Vision-Language Model Engines".
 
 ---
 
-## 20. Out of Scope — v2 Candidates
+## 20. Out of Scope / Future Roadmap (Post-v1.2)
 
-| Feature | Notes |
-|---------|-------|
-| AI trend interpretation | Could use local Ollama API — no data leaves device |
-| Nextcloud WebDAV sync | CGG holds Bronze partner status; feasible via WebDAV PUT |
-| Bluetooth BP monitor | Web Bluetooth API; bypasses camera/OCR for supported devices |
-| Medication module | Tags serve as proxy in v1.2; full med log in v2 |
-| Reminders / alarms | Web Push + Service Worker; HTTPS already covered |
-| Physician portal | Shared read-only report URL; needs minimal backend |
-| PDF → Nextcloud auto-upload | Post-generation "Save to Nextcloud" via WebDAV PUT |
+These features are explicitly **not in v1.3** but are tracked for future releases.
+
+| Feature | Description | Priority | Notes |
+|---------|-------------|----------|-------|
+| AI trend interpretation | Send log history to a local LLM (via AMM or Ollama) for plain-language trend summaries | Medium | No data leaves device if using local endpoint |
+| Nextcloud WebDAV sync | Push encrypted JSON exports to a self-hosted Nextcloud instance | Medium | CGG holds Bronze partner status; feasible via WebDAV PUT |
+| Bluetooth BP monitor | Web Bluetooth API integration for supported monitors | Low | Bypasses camera/OCR for supported devices |
+| Medication module | Full medication log with schedule tracking | Low | Tags serve as proxy in v1.3; full med log in v2 |
+| Reminders / alarms | Web Push + Service Worker for reading reminders | Low | HTTPS already covered |
+| Physician portal | Generate shareable read-only report links | Low | Needs minimal backend |
+| PDF → Nextcloud auto-upload | Post-generation "Save to Nextcloud" via WebDAV PUT | Low | Post-report action |
 
 ---
 
-*End of document — BPLog FRD v1.2*
+## 22. Decision Log
+
+| Date | Decision | Rationale |
+|---|---|---|
+| 2026-04-14 | v1.2 baseline — ocrad.js-only OCR | Pure JS, no WASM, no network, no external dependencies |
+| 2026-04-20 | Added VLM engine tier (AMM / Ollama / OpenAI) | 7-segment LCD displays defeat traditional OCR too often; VLM extraction with editable prompts gives users control while preserving privacy via on-device options |
+| 2026-04-20 | Prompt is caller-provided and editable | Different BP monitors have different layouts; users need to tweak prompts for their device without waiting for an app update |
+| 2026-04-20 | Multi-engine fallback with configurable priority | No single engine works on every phone or in every lighting condition; graceful degradation ensures the app never blocks the user |
+| 2026-04-20 | AMM is auto-detected, not required | bp-app must remain fully functional on any phone; AMM is a power-user enhancement, not a hard dependency |
+| 2026-04-20 | rotate90 is required preprocessing | Experimental evidence: Gemma 4 went from 0/16 full-match (original) to 4/4 (rotate90). Larger models need it; smaller models may prefer original. Try rotate90 first, fall back to original |
+| 2026-04-20 | Minimal prompts beat verbose prompts | "Only the 3 numbers, comma-separated" outperforms 7-seg descriptions and range instructions. A/B test before locking the default |
+| 2026-04-20 | Client-side confidence, not model-reported | Range checks + pulse-pressure sanity are more reliable than a 1–3 GB VLM self-assessing "high|medium|low" |
+| 2026-04-20 | 7-seg template matcher is a real fallback tier | ~80% accuracy, zero network, <1s — deserves a UI slot between "VLM failed" and "type it yourself" |
+| 2026-04-20 | ocrad.js removed from engine ladder | 0/11 full-match across 843+ combinations. Traditional OCR is dead on 7-segment LCDs. Template matcher replaces it as the practical fallback |
+
+---
+
+*End of document — BPLog FRD v1.3*

@@ -481,9 +481,23 @@ function blobToDataUrl(blob) {
 }
 
 async function runOCR(dataUrl, options = {}) {
+  // Engine ladder: AMM vision → OCRAD template matcher
   const rotations = options.rotations ?? [0];
-  const scoreMap = { 'label-SYS/DIA': 4, separator: 3, 'range+pp': 2, 'range-only': 1 };
+  const scoreMap = { 'amm-vision': 5, 'label-SYS/DIA': 4, separator: 3, 'range+pp': 2, 'range-only': 1 };
   const score = r => scoreMap[r.algo] ?? 0;
+
+  // Try AMM first if available
+  if (state.amm) {
+    try {
+      updateLoadingText('AMM vision…');
+      const ammResult = await runAmmVision(dataUrl);
+      if (ammResult.sys && ammResult.dia) {
+        return { ...ammResult, brand: null, model: null };
+      }
+    } catch (e) {
+      console.warn('[AMM] Vision failed:', e.message);
+    }
+  }
 
   let best = null;
   let bestTxt = '';
@@ -1366,6 +1380,17 @@ async function loadSettings() {
   document.getElementById('setting-dark-mode').checked = (localStorage.getItem('bplog_theme') === 'dark');
   loadAccessibilitySettings();
   checkAppUpdate();
+
+  // Update AMM status pill
+  const ammEl = document.getElementById('amm-status');
+  if (ammEl) {
+    if (state.amm) {
+      const model = state.amm.models?.vision || 'vision model';
+      ammEl.innerHTML = `<span style="color:var(--success)">●</span> AMM detected — ${model}`;
+    } else {
+      ammEl.innerHTML = `<span style="color:var(--muted)">○</span> AMM not detected — install AMM app and start HTTP service`;
+    }
+  }
 }
 
 function loadAccessibilitySettings() {
@@ -1707,6 +1732,72 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// =================== AMM Detection ===================
+async function probeAMM() {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch('http://127.0.0.1:8765/v1/status', {
+      signal: controller.signal,
+      mode: 'cors',
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.ready && Array.isArray(data.capabilities) && data.capabilities.includes('vision')) {
+      return data;
+    }
+  } catch (e) {
+    // AMM not installed or not running — silently ignore
+  }
+  return null;
+}
+
+async function runAmmVision(dataUrl, prompt) {
+  // Convert base64 dataUrl to Blob for multipart upload
+  const blob = await (await fetch(dataUrl)).blob();
+  const formData = new FormData();
+  formData.append('image', blob, 'bp.jpg');
+  formData.append('prompt', prompt || 'Read the three numbers on this blood pressure monitor display. Return JSON: {"sys": <top>, "dia": <middle>, "bpm": <bottom>}. No prose, no markdown.');
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  const res = await fetch('http://127.0.0.1:8765/v1/vision/completions', {
+    method: 'POST',
+    body: formData,
+    signal: controller.signal,
+    mode: 'cors',
+  });
+  clearTimeout(timer);
+  if (!res.ok) throw new Error(`AMM HTTP ${res.status}`);
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || 'AMM inference failed');
+
+  // Parse JSON from AMM response text
+  const text = data.response || '';
+  let parsed = null;
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*?\}/);
+    if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+  } catch (e) {
+    // fallback: regex extract
+  }
+  if (!parsed) {
+    const nums = text.match(/\d+/g)?.map(Number) || [];
+    if (nums.length >= 2) {
+      parsed = { sys: nums[0], dia: nums[1], bpm: nums[2] ?? null };
+    }
+  }
+
+  return {
+    sys: parsed?.sys ?? null,
+    dia: parsed?.dia ?? null,
+    hr: parsed?.bpm ?? parsed?.pulse ?? null,
+    algo: 'amm-vision',
+    rawText: text,
+  };
+}
+
 // =================== Init ===================
 (async () => {
   await initDB();
@@ -1721,4 +1812,9 @@ window.addEventListener('keydown', (e) => {
   handleUrlShortcuts();
   initCardMinimize();
   initScreenCloseButtons();
+  // Probe AMM once on startup
+  state.amm = await probeAMM();
+  if (state.amm) {
+    console.log('[AMM] Detected:', state.amm.models?.vision || 'vision model ready');
+  }
 })();
