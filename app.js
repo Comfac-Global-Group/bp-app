@@ -526,58 +526,23 @@ function blobToDataUrl(blob) {
 }
 
 async function runOCR(dataUrl, options = {}) {
-  // Engine ladder: AMM vision → OCRAD template matcher
-  const rotations = options.rotations ?? [0];
-  const scoreMap = { 'amm-vision': 5, 'label-SYS/DIA': 4, separator: 3, 'range+pp': 2, 'range-only': 1 };
-  const score = r => scoreMap[r.algo] ?? 0;
-
-  // Try AMM first if available
-  if (state.amm) {
-    try {
-      updateLoadingText('AMM vision…');
-      const ammResult = await runAmmVision(dataUrl);
-      if (ammResult.sys && ammResult.dia) {
-        return { ...ammResult, brand: null, model: null };
-      }
-    } catch (e) {
-      console.warn('[AMM] Vision failed:', e.message);
-    }
+  // AMM vision only — OCRAD disabled (crashes on mobile with memory errors)
+  if (!state.amm) {
+    throw new Error(
+      'AMM vision service not available.\n\n' +
+      'Please ensure:\n' +
+      '1. AMM app is open\n' +
+      '2. HTTP service is ON (tap "AI ON" in the browser toolbar)\n' +
+      '3. A vision model is loaded in AMM Vision Hub'
+    );
   }
 
-  let best = null;
-  let bestTxt = '';
-  let allText = '';
-
-  for (const rotation of rotations) {
-    const rotLabel = rotation === 0 ? '' : ` (rotate ${rotation}°)`;
-    // Pass A: normal threshold
-    updateLoadingText(`Scanning${rotLabel}…`);
-    const canvasA = await preprocessForOCR(dataUrl, { invert: false, rotation });
-    const textA   = OCRAD(canvasA);
-    const resultA = extractBP(textA);
-    allText += textA + '\n';
-
-    // Pass B: inverted
-    updateLoadingText(`Scanning inverted${rotLabel}…`);
-    const canvasB = await preprocessForOCR(dataUrl, { invert: true, rotation });
-    const textB   = OCRAD(canvasB);
-    const resultB = extractBP(textB);
-    allText += textB + '\n';
-
-    // Pick best for this rotation
-    const bestRot = score(resultA) >= score(resultB) ? resultA : resultB;
-    const bestRotTxt = bestRot === resultA ? textA : textB;
-
-    if (!best || score(bestRot) > score(best)) {
-      best = bestRot;
-      bestTxt = bestRotTxt;
-    }
-    // Early exit if we got a label-based result (strongest signal)
-    if (best?.algo === 'label-SYS/DIA') break;
+  updateLoadingText('AMM vision…');
+  const ammResult = await runAmmVision(dataUrl);
+  if (ammResult.sys && ammResult.dia) {
+    return { ...ammResult, brand: null, model: null };
   }
-
-  const { brand, model } = detectDevice(allText);
-  return { ...best, brand, model, rawText: bestTxt };
+  throw new Error('AMM vision could not read the blood pressure values. Please try again with a clearer photo.');
 }
 
 // ---- Multi-algorithm BP extraction ----------------------------------------
@@ -1874,5 +1839,12 @@ async function runAmmVision(dataUrl, prompt) {
   state.amm = await probeAMM();
   if (state.amm) {
     console.log('[AMM] Detected:', state.amm.models?.vision || 'vision model ready');
+  } else {
+    console.error('[AMM] Not detected. To use vision OCR:');
+    console.error('  1. Open AMM app → Vision Hub');
+    console.error('  2. Load a vision model (Qwen2-VL or similar)');
+    console.error('  3. Toggle HTTP service ON');
+    console.error('  4. Return to BPLog and tap "AI ON" if needed');
   }
+  loadSettings();
 })();
