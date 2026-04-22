@@ -32,6 +32,7 @@ function initDebugConsole() {
   const toggle = document.getElementById('debug-toggle');
   const hideBtn = document.getElementById('debug-hide');
   const clearBtn = document.getElementById('debug-clear');
+  const copyBtn = document.getElementById('debug-copy');
   if (!drawer || !body || !toggle) return;
 
   const show = () => { drawer.style.display = 'flex'; toggle.style.display = 'none'; };
@@ -40,6 +41,17 @@ function initDebugConsole() {
   toggle.addEventListener('click', show);
   hideBtn?.addEventListener('click', hide);
   clearBtn?.addEventListener('click', () => { debugLog.length = 0; body.innerHTML = ''; });
+  copyBtn?.addEventListener('click', async () => {
+    const text = debugLog.map(e => `${e.time} [${e.level.toUpperCase()}] ${e.msg}`).join('\n');
+    try {
+      await navigator.clipboard.writeText(text || '(empty log)');
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => copyBtn.textContent = 'Copy', 1500);
+    } catch (err) {
+      copyBtn.textContent = 'Failed';
+      setTimeout(() => copyBtn.textContent = 'Copy', 1500);
+    }
+  });
 
   // Intercept console methods
   const original = {
@@ -500,7 +512,7 @@ async function loadFileIntoOCR(file) {
         : 'No text detected in image. Try a clearer or closer photo, or rotate the image, then enter values manually.';
     }
   } catch (e) {
-    console.error('OCR error', e);
+    console.warn('OCR error', e);
     hint.style.display = 'block';
     hint.style.background = '#f8d7da';
     hint.style.color = '#721c24';
@@ -617,47 +629,6 @@ function detectDevice(text) {
 }
 // ---------------------------------------------------------------------------
 
-async function preprocessForOCR(dataUrl, options = {}) {
-  const invert = options.invert ?? false;
-  const rotation = options.rotation ?? 0;
-  const img = new Image();
-  img.src = dataUrl;
-  await new Promise(r => img.onload = r);
-
-  // Scale UP for OCR — ocrad works better with larger images; cap at 2400px
-  const TARGET = 1800;
-  const scale  = Math.min(3, Math.max(1, TARGET / Math.max(img.naturalWidth, img.naturalHeight)));
-  const srcW = Math.round(img.naturalWidth  * scale);
-  const srcH = Math.round(img.naturalHeight * scale);
-
-  // Apply rotation
-  const swap = rotation === 90 || rotation === 270;
-  const w = swap ? srcH : srcW;
-  const h = swap ? srcW : srcH;
-
-  const canvas = document.createElement('canvas');
-  canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext('2d');
-
-  ctx.save();
-  ctx.translate(w / 2, h / 2);
-  ctx.rotate((rotation * Math.PI) / 180);
-  ctx.drawImage(img, -srcW / 2, -srcH / 2, srcW, srcH);
-  ctx.restore();
-
-  const idata = ctx.getImageData(0, 0, w, h);
-  const d = idata.data;
-  for (let i = 0; i < d.length; i += 4) {
-    const gray = 0.299*d[i] + 0.587*d[i+1] + 0.114*d[i+2];
-    // Binary threshold — ocrad needs clean black-on-white, not greyscale
-    const v = invert ? (gray < 128 ? 255 : 0) : (gray >= 128 ? 255 : 0);
-    d[i] = d[i+1] = d[i+2] = v;
-    d[i+3] = 255;
-  }
-  ctx.putImageData(idata, 0, 0);
-  return canvas;
-}
-
 // =================== OCR Tags ===================
 const ocrTags = [];
 document.getElementById('ocr-tag-input').addEventListener('keydown', e => {
@@ -764,7 +735,7 @@ document.getElementById('btn-ocr-rotate').addEventListener('click', async () => 
       hint.textContent = `No readings at ${rotLabel}. Try another rotation or enter manually.`;
     }
   } catch (e) {
-    console.error('OCR rotation error', e);
+    console.warn('OCR rotation error', e);
     hint.style.display = 'block';
     hint.style.background = '#f8d7da';
     hint.style.color = '#721c24';
@@ -1782,7 +1753,7 @@ async function probeAMM() {
     console.warn('[AMM] Probe returned but not ready:', data);
     return null;
   } catch (e) {
-    console.error('[AMM] Probe failed:', e.message || e);
+    console.warn('[AMM] Probe failed:', e.message || e);
     return null;
   }
 }
