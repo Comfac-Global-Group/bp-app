@@ -21,7 +21,52 @@ const state = {
   charts: {},
   deferredInstall: null,
   allTagRegistry: new Set(),
+  amm: null, // { ready, capabilities, models, version } or null
 };
+
+// ---- Debug Console ---------------------------------------------------------
+const debugLog = [];
+function initDebugConsole() {
+  const drawer = document.getElementById('debug-drawer');
+  const body = document.getElementById('debug-body');
+  const toggle = document.getElementById('debug-toggle');
+  const hideBtn = document.getElementById('debug-hide');
+  const clearBtn = document.getElementById('debug-clear');
+  if (!drawer || !body || !toggle) return;
+
+  const show = () => { drawer.style.display = 'flex'; toggle.style.display = 'none'; };
+  const hide = () => { drawer.style.display = 'none'; toggle.style.display = 'flex'; };
+
+  toggle.addEventListener('click', show);
+  hideBtn?.addEventListener('click', hide);
+  clearBtn?.addEventListener('click', () => { debugLog.length = 0; body.innerHTML = ''; });
+
+  // Intercept console methods
+  const original = {
+    log: console.log,
+    warn: console.warn,
+    error: console.error,
+  };
+  function push(level, args) {
+    const msg = Array.from(args).map(a => (typeof a === 'object' ? JSON.stringify(a) : String(a))).join(' ');
+    const time = new Date().toLocaleTimeString();
+    debugLog.push({ time, level, msg });
+    const el = document.createElement('div');
+    el.className = `log-entry log-${level}`;
+    el.innerHTML = `<span class="log-time">${time}</span>${msg}`;
+    body.appendChild(el);
+    body.scrollTop = body.scrollHeight;
+    // Auto-show on error
+    if (level === 'error') show();
+  }
+  console.log = (...a) => { original.log.apply(console, a); push('info', a); };
+  console.warn = (...a) => { original.warn.apply(console, a); push('warn', a); };
+  console.error = (...a) => { original.error.apply(console, a); push('error', a); };
+
+  // Show toggle by default (drawer hidden)
+  toggle.style.display = 'flex';
+  push('info', ['Debug console ready']);
+}
 
 const PALETTE = ['#0d7377','#14a085','#2ecc71','#3498db','#9b59b6','#e74c3c','#f39c12','#1abc9c'];
 
@@ -1610,6 +1655,12 @@ async function doAppUpdate() {
 
 document.getElementById('btn-check-update').addEventListener('click', checkAppUpdate);
 
+document.getElementById('btn-amm-redetect')?.addEventListener('click', async () => {
+  console.log('[AMM] Manual re-detect triggered');
+  state.amm = await probeAMM();
+  loadSettings();
+});
+
 // =================== Modal / Loading ===================
 function showModal(message, onConfirm) {
   document.getElementById('modal-body').textContent = message;
@@ -1742,15 +1793,21 @@ async function probeAMM() {
       mode: 'cors',
     });
     clearTimeout(timer);
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.error('[AMM] Probe HTTP error:', res.status);
+      return null;
+    }
     const data = await res.json();
     if (data.ready && Array.isArray(data.capabilities) && data.capabilities.includes('vision')) {
+      console.log('[AMM] Probe success:', data);
       return data;
     }
+    console.warn('[AMM] Probe returned but not ready:', data);
+    return null;
   } catch (e) {
-    // AMM not installed or not running — silently ignore
+    console.error('[AMM] Probe failed:', e.message || e);
+    return null;
   }
-  return null;
 }
 
 async function runAmmVision(dataUrl, prompt) {
@@ -1812,6 +1869,7 @@ async function runAmmVision(dataUrl, prompt) {
   handleUrlShortcuts();
   initCardMinimize();
   initScreenCloseButtons();
+  initDebugConsole();
   // Probe AMM once on startup
   state.amm = await probeAMM();
   if (state.amm) {

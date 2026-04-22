@@ -294,6 +294,7 @@
           <div class="card-title">Engines</div>
           <div id="amm-status" class="text-muted">AMM: checking…</div>
           <div class="text-muted" style="font-size:12px; margin-top:4px;">On-device vision models via AMM Android app</div>
+          <button class="btn btn-secondary btn-block mt-2" id="btn-amm-redetect">Re-detect AMM</button>
         </div>
 
         <div class="card">
@@ -347,6 +348,17 @@
       </div>
     </div>
   </div>
+
+  <!-- Global Debug Console Drawer -->
+  <div id="debug-drawer" class="debug-drawer" style="display:none;">
+    <div class="debug-header">
+      <span class="debug-title">📋 Debug Log</span>
+      <button class="debug-btn" id="debug-clear">Clear</button>
+      <button class="debug-btn" id="debug-hide">Hide</button>
+    </div>
+    <div id="debug-body" class="debug-body"></div>
+  </div>
+  <button id="debug-toggle" class="debug-toggle" style="display:none;" title="Show debug log">📋</button>
 
   <script src="app.js"></script>
 </body>
