@@ -526,6 +526,7 @@ function blobToDataUrl(blob) {
 }
 
 async function runOCR(dataUrl, options = {}) {
+  console.log('[OCR] Starting vision flow...');
   // AMM vision only — OCRAD disabled (crashes on mobile with memory errors)
   if (!state.amm) {
     throw new Error(
@@ -1748,6 +1749,17 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// =================== Helpers ===================
+function dataUrlToBlob(dataUrl) {
+  const arr = dataUrl.split(',');
+  const mime = arr[0].match(/:(.*?);/)[1];
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) { u8arr[n] = bstr.charCodeAt(n); }
+  return new Blob([u8arr], { type: mime });
+}
+
 // =================== AMM Detection ===================
 async function probeAMM() {
   try {
@@ -1777,11 +1789,14 @@ async function probeAMM() {
 
 async function runAmmVision(dataUrl, prompt) {
   // Convert base64 dataUrl to Blob for multipart upload
-  const blob = await (await fetch(dataUrl)).blob();
+  // NOTE: Android WebView blocks fetch() on data: URIs, so we decode manually
+  console.log('[OCR] Stage 1/4: Decoding image...');
+  const blob = dataUrlToBlob(dataUrl);
   const formData = new FormData();
   formData.append('image', blob, 'bp.jpg');
   formData.append('prompt', prompt || 'Read the three numbers on this blood pressure monitor display. Return JSON: {"sys": <top>, "dia": <middle>, "bpm": <bottom>}. No prose, no markdown.');
 
+  console.log('[OCR] Stage 2/4: Sending to AMM (127.0.0.1:8765)...');
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 15000);
   const res = await fetch('http://127.0.0.1:8765/v1/vision/completions', {
@@ -1791,10 +1806,12 @@ async function runAmmVision(dataUrl, prompt) {
     mode: 'cors',
   });
   clearTimeout(timer);
+  console.log('[OCR] Stage 3/4: AMM responded, parsing...');
   if (!res.ok) throw new Error(`AMM HTTP ${res.status}`);
   const data = await res.json();
   if (!data.success) throw new Error(data.error || 'AMM inference failed');
 
+  console.log('[OCR] Stage 4/4: Extracting values from response...');
   // Parse JSON from AMM response text
   const text = data.response || '';
   let parsed = null;
@@ -1840,11 +1857,11 @@ async function runAmmVision(dataUrl, prompt) {
   if (state.amm) {
     console.log('[AMM] Detected:', state.amm.models?.vision || 'vision model ready');
   } else {
-    console.error('[AMM] Not detected. To use vision OCR:');
-    console.error('  1. Open AMM app → Vision Hub');
-    console.error('  2. Load a vision model (Qwen2-VL or similar)');
-    console.error('  3. Toggle HTTP service ON');
-    console.error('  4. Return to BPLog and tap "AI ON" if needed');
+    console.warn('[AMM] Not detected. To use vision OCR:');
+    console.warn('  1. Open AMM app → Vision Hub');
+    console.warn('  2. Load a vision model (Qwen2-VL or similar)');
+    console.warn('  3. Toggle HTTP service ON');
+    console.warn('  4. Return to BPLog and tap "AI ON" if needed');
   }
   loadSettings();
 })();
