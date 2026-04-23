@@ -131,7 +131,7 @@ input, textarea, select {
 input:focus, textarea:focus, select:focus { outline: none; border-color: var(--primary); }
 
 /* Home actions */
-.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+.actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px; }
 .action-card {
   background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 12px; text-align: center; cursor: pointer;
 }
@@ -202,6 +202,76 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--p
 
 /* Empty states */
 .empty { text-align: center; color: var(--muted); padding: 40px 16px; }
+
+/* Queue badge */
+.queue-badge {
+  background: var(--danger); color: #fff; font-size: 11px; font-weight: 700;
+  padding: 3px 8px; border-radius: 999px; border: none; cursor: pointer; white-space: nowrap;
+}
+
+/* Drop zone */
+.drop-zone {
+  border: 2px dashed var(--primary); border-radius: var(--radius);
+  background: rgba(13,115,119,0.04); padding: 24px; text-align: center; margin-bottom: 16px;
+  transition: background .2s, border-color .2s;
+}
+.drop-zone.drag-over {
+  background: rgba(13,115,119,0.10); border-color: var(--primary-dark);
+}
+.drop-zone-inner .icon { font-size: 32px; margin-bottom: 6px; }
+.drop-zone-inner .label { font-weight: 700; font-size: 14px; }
+.drop-zone-inner .hint { font-size: 12px; color: var(--muted); }
+
+/* Queue home card */
+.queue-home-card { border-left: 4px solid var(--primary); }
+
+/* Queue entries */
+.queue-row {
+  display: flex; gap: 12px; align-items: center; background: var(--surface); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 12px; margin-bottom: 10px;
+}
+.queue-row.processing { border-left: 3px solid var(--primary); }
+.queue-row.done { border-left: 3px solid var(--success); }
+.queue-row.low-confidence { border-left: 3px solid var(--warning); }
+.queue-row.failed { border-left: 3px solid var(--danger); }
+.queue-row.pending { border-left: 3px solid var(--muted); }
+.queue-row.skipped { border-left: 3px solid var(--border); opacity: 0.7; }
+.queue-row .queue-thumb { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: var(--border); flex: 0 0 auto; }
+.queue-row .queue-body { flex: 1; min-width: 0; }
+.queue-row .queue-meta { font-size: 12px; color: var(--muted); }
+.queue-row .queue-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.queue-row .status-chip {
+  font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 999px; display: inline-flex; align-items: center; gap: 4px;
+}
+.status-pending { background: #e9ecef; color: #495057; }
+.status-processing { background: #e6f4f4; color: var(--primary); }
+.status-done { background: #d4edda; color: #155724; }
+.status-low-confidence { background: #fff3cd; color: #856404; }
+.status-failed { background: #f8d7da; color: #721c24; }
+.status-skipped { background: #e9ecef; color: #6c757d; }
+
+/* Progress bar */
+.progress-bar-wrap { background: var(--border); border-radius: 999px; height: 8px; overflow: hidden; }
+.progress-bar { background: var(--primary); height: 100%; width: 0%; transition: width .3s ease; }
+
+/* Duplicate modal */
+.duplicate-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.duplicate-side { text-align: center; }
+.duplicate-side img { max-width: 100%; border-radius: 8px; background: var(--border); max-height: 160px; object-fit: contain; }
+
+/* Engine settings */
+.engine-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.engine-section-title { font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+.engine-priority-list { display: flex; flex-direction: column; gap: 6px; }
+.engine-priority-item {
+  display: flex; align-items: center; gap: 8px; background: var(--bg); padding: 8px 10px; border-radius: 8px;
+  border: 1px solid var(--border); cursor: grab; font-size: 13px; font-weight: 600;
+}
+.engine-priority-item.dragging { opacity: 0.5; }
+.engine-priority-item .drag-handle { cursor: grab; color: var(--muted); font-size: 16px; }
+
+/* Log list pending styling */
+.entry-row.pending-entry { opacity: 0.7; }
 
 /* Utility */
 .mt-2 { margin-top: 8px; }

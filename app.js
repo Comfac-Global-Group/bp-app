@@ -22,6 +22,13 @@ const state = {
   deferredInstall: null,
   allTagRegistry: new Set(),
   amm: null, // { ready, capabilities, models, version } or null
+  // Batch / queue state
+  queue: [], // pending_ocr entries for current user
+  isProcessing: false,
+  pauseRequested: false,
+  currentQueueIndex: 0,
+  duplicateChoice: null, // 'keep' | 'skip' | 'replace' | null
+  duplicateApplyAll: false,
 };
 
 // ---- Debug Console ---------------------------------------------------------
@@ -135,6 +142,131 @@ async function initDB() {
       if (!db.objectStoreNames.contains('tags')) db.createObjectStore('tags', { keyPath: 'user_id' });
     }
   });
+}
+
+// =================== pHash (perceptual hash) ===================
+async function computePHash(blob) {
+  // Pure-JS perceptual hash using canvas + DCT on 32x32 grayscale
+  const bitmap = await createImageBitmap(blob);
+  const size = 32;
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(bitmap, 0, 0, size, size);
+  const imgData = ctx.getImageData(0, 0, size, size).data;
+  bitmap.close();
+
+  // Grayscale
+  const gray = new Float64Array(size * size);
+  for (let i = 0; i < size * size; i++) {
+    const r = imgData[i * 4], g = imgData[i * 4 + 1], b = imgData[i * 4 + 2];
+    gray[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+  }
+
+  // 2D DCT
+  function dct2D(input, N) {
+    const output = new Float64Array(N * N);
+    const c = new Float64Array(N);
+    c[0] = 1 / Math.sqrt(N);
+    for (let i = 1; i < N; i++) c[i] = Math.sqrt(2 / N);
+    for (let u = 0; u < N; u++) {
+      for (let v = 0; v < N; v++) {
+        let sum = 0;
+        for (let x = 0; x < N; x++) {
+          for (let y = 0; y < N; y++) {
+            sum += input[x * N + y] * Math.cos((2 * x + 1) * u * Math.PI / (2 * N)) * Math.cos((2 * y + 1) * v * Math.PI / (2 * N));
+          }
+        }
+        output[u * N + v] = sum * c[u] * c[v];
+      }
+    }
+    return output;
+  }
+
+  const dct = dct2D(gray, size);
+  // Use top-left 8x8 (low frequencies), excluding DC component [0]
+  const top = [];
+  for (let i = 0; i < 8; i++) {
+    for (let j = 0; j < 8; j++) {
+      if (i === 0 && j === 0) continue;
+      top.push(dct[i * size + j]);
+    }
+  }
+  const avg = top.reduce((a, b) => a + b, 0) / top.length;
+  let hash = '';
+  for (let i = 0; i < 64; i++) {
+    hash += (top[i] >= avg) ? '1' : '0';
+  }
+  return hash;
+}
+
+function hammingDistance(a, b) {
+  if (a.length !== b.length) return Infinity;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) d++;
+  return d;
+}
+
+async function findDuplicateImage(phash, userId) {
+  const allImages = await db.getAll('images');
+  const userEntries = await db.getAllFromIndex('entries', 'user_id', userId);
+  const userEntryIds = new Set(userEntries.map(e => e.id));
+  for (const img of allImages) {
+    if (!img.phash || !userEntryIds.has(img.entry_id)) continue;
+    if (hammingDistance(phash, img.phash) <= 8) {
+      const entry = userEntries.find(e => e.id === img.entry_id);
+      return { entry, image: img };
+    }
+  }
+  return null;
+}
+
+// =================== Image Preprocessing ===================
+async function preprocessImage(blob, opts = {}) {
+  const { minDimension = 1800, rotation = 0, contrast = false } = opts;
+  const bitmap = await createImageBitmap(blob);
+  let w = bitmap.width, h = bitmap.height;
+  // Scale so min side = minDimension
+  const scale = Math.max(minDimension / w, minDimension / h, 1);
+  w = Math.round(w * scale); h = Math.round(h * scale);
+
+  const canvas = document.createElement('canvas');
+  if (rotation === 90 || rotation === 270) { canvas.width = h; canvas.height = w; }
+  else { canvas.width = w; canvas.height = h; }
+  const ctx = canvas.getContext('2d');
+  if (rotation) {
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate(rotation * Math.PI / 180);
+    ctx.drawImage(bitmap, -w / 2, -h / 2, w, h);
+  } else {
+    ctx.drawImage(bitmap, 0, 0, w, h);
+  }
+  bitmap.close();
+
+  if (contrast) {
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imgData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = data[i] * 1.2;
+      data[i + 1] = data[i + 1] * 1.2;
+      data[i + 2] = data[i + 2] * 1.2;
+    }
+    ctx.putImageData(imgData, 0, 0);
+  }
+
+  return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+}
+
+// =================== EXIF Timestamp ===================
+async function extractExifTimestamp(blob) {
+  try {
+    const exif = await exifr.parse(blob);
+    if (exif) {
+      const raw = exif.DateTimeOriginal || exif.CreateDate || exif.DateTime || exif.DateTimeDigitized;
+      if (raw) return { ts: new Date(raw).toISOString(), source: 'from photo EXIF' };
+    }
+  } catch {}
+  return { ts: new Date().toISOString(), source: 'now (no EXIF)' };
 }
 
 // =================== Helpers ===================
@@ -339,12 +471,13 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-' + id).classList.add('active');
   document.querySelectorAll('header .nav-btn').forEach(b => b.classList.remove('active'));
-  const btn = document.querySelector(`header .nav-btn[data-screen="${id}"]`);
+  const btn = document.querySelector('header .nav-btn[data-screen="' + id + '"]');
   if (btn) btn.classList.add('active');
   if (id === 'logs') renderLogs();
   if (id === 'reports') renderReports();
   if (id === 'images') renderImages();
   if (id === 'settings') loadSettings();
+  if (id === 'queue') renderQueue();
 }
 document.querySelectorAll('header .nav-btn').forEach(b => {
   b.addEventListener('click', () => showScreen(b.dataset.screen));
@@ -359,6 +492,66 @@ async function loadData() {
   renderRecent();
   renderLogTags();
   renderReportTags();
+  await refreshQueue();
+}
+
+// =================== Queue / Batch ===================
+async function getQueueEntries(userId) {
+  const all = await db.getAll('entries');
+  return all.filter(e => e.user_id === userId && e.status && e.status !== 'done' && e.status !== 'low_confidence');
+}
+
+async function refreshQueue() {
+  state.queue = await getQueueEntries(state.currentUserId);
+  updateQueueBadge();
+  renderQueueHomeCard();
+}
+
+function updateQueueBadge() {
+  const count = state.queue.filter(q => q.status === 'pending_ocr').length;
+  const badge = document.getElementById('header-queue-badge');
+  const nav = document.getElementById('nav-queue');
+  const countEl = document.getElementById('header-queue-count');
+  if (count > 0) {
+    badge.style.display = 'inline-flex';
+    nav.style.display = 'inline-block';
+    countEl.textContent = count;
+  } else {
+    badge.style.display = 'none';
+    nav.style.display = 'none';
+  }
+}
+
+function renderQueueHomeCard() {
+  const count = state.queue.filter(q => q.status === 'pending_ocr').length;
+  const card = document.getElementById('queue-home-card');
+  const countEl = document.getElementById('queue-home-count');
+  if (count > 0 && !localStorage.getItem('bplog_queue_card_dismissed')) {
+    card.style.display = 'block';
+    countEl.textContent = count;
+  } else {
+    card.style.display = 'none';
+  }
+}
+
+async function savePendingEntry(blob, timestamp, tsSource) {
+  const entryId = uuid();
+  const entry = {
+    id: entryId,
+    user_id: state.currentUserId,
+    timestamp,
+    systolic: null, diastolic: null, heart_rate: null,
+    pulse_pressure: null, mean_arterial_pressure: null, bp_category: null,
+    note: null, tags: [], machine_brand: null,
+    image_ref: entryId,
+    status: 'pending_ocr',
+    ts_source: tsSource,
+    created_at: new Date().toISOString(),
+  };
+  await db.put('entries', entry);
+  const phash = await computePHash(blob);
+  await db.put('images', { entry_id: entryId, data: blob, phash });
+  return entry;
 }
 
 // =================== Recent entries ===================
@@ -375,23 +568,32 @@ function renderRecent() {
 }
 
 function entryRowHTML(e) {
-  const tags = (e.tags || []).map(t => `<span class="tag-chip" style="background:${hashColor(t)}22;color:${hashColor(t)}">${escapeHtml(t)}</span>`).join('');
-  const note = e.note ? `<div class="text-muted" style="margin-top:4px">${escapeHtml(e.note.slice(0,60))}${e.note.length>60?'…':''}</div>` : '';
+  const isPending = e.status === 'pending_ocr' || e.status === 'processing' || e.status === 'failed' || e.status === 'skipped';
+  const tags = (e.tags || []).map(t => '<span class="tag-chip" style="background:' + hashColor(t) + '22;color:' + hashColor(t) + '">' + escapeHtml(t) + '</span>').join('');
+  const note = e.note ? '<div class="text-muted" style="margin-top:4px">' + escapeHtml(e.note.slice(0,60)) + (e.note.length>60?'…':'') + '</div>' : '';
   const thumbSrc = e.image_ref ? '' : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-  return `
-    <div class="entry-row" id="entry-row-${e.id}">
-      <img class="entry-thumb" src="${thumbSrc}" data-img="${e.image_ref||''}" id="thumb-${e.id}" />
-      <div class="entry-body">
-        <div class="entry-meta">${fmtDate(e.timestamp)}</div>
-        <div class="entry-values">
-          ${renderBadge(e.bp_category, `${e.systolic}/${e.diastolic}`)}
-          <span class="badge">${e.heart_rate} bpm</span>
-        </div>
-        <div class="tag-list">${tags}</div>
-        ${note}
-      </div>
-    </div>
-  `;
+  const noExif = e.ts_source === 'now (no EXIF)';
+  let valuesHtml;
+  if (isPending) {
+    const chipMap = {
+      pending_ocr: '⏳ Pending',
+      processing: '🔄 Processing',
+      failed: '❌ Failed',
+      skipped: '⏭ Skipped',
+    };
+    valuesHtml = '<span class="badge" style="background:#e9ecef;color:#495057">' + (chipMap[e.status] || 'Pending') + '</span>';
+  } else {
+    valuesHtml = renderBadge(e.bp_category, e.systolic + '/' + e.diastolic) + '<span class="badge">' + e.heart_rate + ' bpm</span>';
+  }
+  return '<div class="entry-row ' + (isPending ? 'pending-entry' : '') + '" id="entry-row-' + e.id + '">' +
+    '<img class="entry-thumb" src="' + thumbSrc + '" data-img="' + (e.image_ref||'') + '" id="thumb-' + e.id + '" />' +
+    '<div class="entry-body">' +
+      '<div class="entry-meta">' + fmtDate(e.timestamp) + (noExif ? ' <span class="badge" style="font-size:10px">(no EXIF)</span>' : '') + '</div>' +
+      '<div class="entry-values">' + valuesHtml + '</div>' +
+      '<div class="tag-list">' + tags + '</div>' +
+      note +
+    '</div>' +
+  '</div>';
 }
 
 async function loadLogThumbnails(list) {
@@ -427,6 +629,109 @@ function initDisclaimer() {
   document.getElementById('btn-accept-disclaimer').addEventListener('click', () => {
     localStorage.setItem('bplog_disclaimer_seen', '1');
     overlay.classList.remove('active');
+  });
+}
+
+async function processBatchFiles(files) {
+  const acceptedTypes = ['image/jpeg','image/png','image/heic','image/heif','image/webp'];
+  const maxSize = 20 * 1024 * 1024;
+  let oversized = 0;
+
+  for (const file of files) {
+    if (!acceptedTypes.includes(file.type) && !file.name.match(/\.(jpe?g|png|heic|heif|webp)$/i)) continue;
+    if (file.size > maxSize) { oversized++; continue; }
+
+    let blob = file;
+    if (file.type === 'image/heic' || file.type === 'image/heif' || file.type === 'image/webp') {
+      try {
+        const bmp = await createImageBitmap(file);
+        const c = document.createElement('canvas');
+        c.width = bmp.width; c.height = bmp.height;
+        c.getContext('2d').drawImage(bmp, 0, 0);
+        bmp.close();
+        blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.92));
+      } catch {
+        console.warn('[Batch] Could not convert', file.name);
+        continue;
+      }
+    }
+
+    const phash = await computePHash(blob);
+    const dup = await findDuplicateImage(phash, state.currentUserId);
+    if (dup && !state.duplicateApplyAll) {
+      const choice = await showDuplicateModal(file, blob, dup.entry, dup.image);
+      if (choice === 'skip') continue;
+      if (choice === 'replace') {
+        await db.put('images', { entry_id: dup.entry.id, data: blob, phash });
+        dup.entry.status = 'pending_ocr';
+        dup.entry.systolic = null; dup.entry.diastolic = null; dup.entry.heart_rate = null;
+        dup.entry.bp_category = null; dup.entry.pulse_pressure = null; dup.entry.mean_arterial_pressure = null;
+        dup.entry.note = null; dup.entry.tags = []; dup.entry.machine_brand = null;
+        await db.put('entries', dup.entry);
+        continue;
+      }
+    } else if (dup && state.duplicateApplyAll) {
+      if (state.duplicateChoice === 'skip') continue;
+      if (state.duplicateChoice === 'replace') {
+        await db.put('images', { entry_id: dup.entry.id, data: blob, phash });
+        dup.entry.status = 'pending_ocr';
+        dup.entry.systolic = null; dup.entry.diastolic = null; dup.entry.heart_rate = null;
+        dup.entry.bp_category = null; dup.entry.pulse_pressure = null; dup.entry.mean_arterial_pressure = null;
+        dup.entry.note = null; dup.entry.tags = []; dup.entry.machine_brand = null;
+        await db.put('entries', dup.entry);
+        continue;
+      }
+    }
+
+    const { ts, source } = await extractExifTimestamp(blob);
+    await savePendingEntry(blob, ts, source);
+  }
+
+  await refreshQueue();
+  const autoProcess = localStorage.getItem('bplog_auto_process') === 'true';
+  if (autoProcess && state.queue.filter(q => q.status === 'pending_ocr').length > 0) {
+    showScreen('queue');
+    startBatchProcessing();
+  }
+}
+
+function showDuplicateModal(file, newBlob, existingEntry, existingImage) {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('duplicate-overlay');
+    const newThumb = document.getElementById('dup-new-thumb');
+    const oldThumb = document.getElementById('dup-old-thumb');
+    const oldMeta = document.getElementById('dup-old-meta');
+    const applyAll = document.getElementById('dup-apply-all');
+
+    newThumb.src = URL.createObjectURL(newBlob);
+    if (existingImage && existingImage.data) {
+      oldThumb.src = URL.createObjectURL(existingImage.data);
+      oldThumb.style.display = 'block';
+    } else { oldThumb.style.display = 'none'; }
+
+    const ts = existingEntry.timestamp ? fmtDate(existingEntry.timestamp) : 'Unknown date';
+    const vals = existingEntry.systolic ? `${existingEntry.systolic}/${existingEntry.diastolic} · ${existingEntry.heart_rate} bpm` : 'No readings saved';
+    oldMeta.textContent = '\uD83D\uDCC5 ' + ts + ' \n\u2764\uFE0F ' + vals;
+
+    overlay.classList.add('active');
+    applyAll.checked = false;
+
+    const cleanup = () => {
+      overlay.classList.remove('active');
+      URL.revokeObjectURL(newThumb.src);
+      if (oldThumb.src.startsWith('blob:')) URL.revokeObjectURL(oldThumb.src);
+      document.getElementById('dup-keep-both').removeEventListener('click', onKeep);
+      document.getElementById('dup-skip-new').removeEventListener('click', onSkip);
+      document.getElementById('dup-replace-old').removeEventListener('click', onReplace);
+    };
+
+    const onKeep = () => { state.duplicateApplyAll = applyAll.checked; state.duplicateChoice = 'keep'; cleanup(); resolve('keep'); };
+    const onSkip = () => { state.duplicateApplyAll = applyAll.checked; state.duplicateChoice = 'skip'; cleanup(); resolve('skip'); };
+    const onReplace = () => { state.duplicateApplyAll = applyAll.checked; state.duplicateChoice = 'replace'; cleanup(); resolve('replace'); };
+
+    document.getElementById('dup-keep-both').addEventListener('click', onKeep);
+    document.getElementById('dup-skip-new').addEventListener('click', onSkip);
+    document.getElementById('dup-replace-old').addEventListener('click', onReplace);
   });
 }
 
@@ -537,25 +842,194 @@ function blobToDataUrl(blob) {
   });
 }
 
+function getEnginePriority() {
+  try { const saved = localStorage.getItem('bplog_engine_priority'); if (saved) return JSON.parse(saved); } catch {}
+  return ['amm', 'ollama', 'api', 'template'];
+}
+function saveEnginePriority(list) { localStorage.setItem('bplog_engine_priority', JSON.stringify(list)); }
+
+function getAiSettings() {
+  return {
+    ollamaHost: localStorage.getItem('bplog_ollama_host') || 'http://localhost:11434',
+    ollamaModel: localStorage.getItem('bplog_ollama_model') || 'llava:7b',
+    apiBase: localStorage.getItem('bplog_api_base_url') || '',
+    apiKey: localStorage.getItem('bplog_api_key') || '',
+    apiModel: localStorage.getItem('bplog_api_model') || 'gpt-4o-mini',
+    prompt: localStorage.getItem('bplog_default_prompt') || 'Read the blood pressure monitor. Return JSON: {sys, dia, bpm}. No prose.',
+    batchDelay: Number(localStorage.getItem('bplog_batch_delay_ms') || 500),
+    autoProcess: localStorage.getItem('bplog_auto_process') === 'true',
+    saveLowConfidence: localStorage.getItem('bplog_save_low_confidence') === 'true',
+  };
+}
+
 async function runOCR(dataUrl, options = {}) {
   console.log('[OCR] Starting vision flow...');
-  // AMM vision only — OCRAD disabled (crashes on mobile with memory errors)
-  if (!state.amm) {
+  const engineInfo = await selectActiveEngine();
+  if (!engineInfo) {
     throw new Error(
-      'AMM vision service not available.\n\n' +
+      'No AI vision service available.\n\n' +
       'Please ensure:\n' +
-      '1. AMM app is open\n' +
-      '2. HTTP service is ON (tap "AI ON" in the browser toolbar)\n' +
-      '3. A vision model is loaded in AMM Vision Hub'
+      '1. AMM app is open (bridge or HTTP)\n' +
+      '2. Ollama is running locally\n' +
+      '3. An OpenAI-compatible API is configured in Settings'
     );
   }
 
-  updateLoadingText('AMM vision…');
-  const ammResult = await runAmmVision(dataUrl);
-  if (ammResult.sys && ammResult.dia) {
-    return { ...ammResult, brand: null, model: null };
+  const settings = engineInfo.settings;
+  const prompt = settings.prompt;
+  let values;
+  if (engineInfo.engine === 'amm') {
+    updateLoadingText('AMM vision…');
+    values = await runAmmVision(dataUrl, prompt);
+  } else if (engineInfo.engine === 'ollama') {
+    updateLoadingText('Ollama vision…');
+    values = await runOllamaVision(dataUrl, settings.ollamaHost, settings.ollamaModel, prompt);
+  } else if (engineInfo.engine === 'api') {
+    updateLoadingText('API vision…');
+    values = await runApiVision(dataUrl, settings.apiBase, settings.apiKey, settings.apiModel, prompt);
+  } else {
+    throw new Error('No engine selected');
   }
-  throw new Error('AMM vision could not read the blood pressure values. Please try again with a clearer photo.');
+
+  if (values.sys && values.dia) {
+    return { ...values, brand: null, model: null };
+  }
+  throw new Error('Vision could not read the blood pressure values. Please try again with a clearer photo.');
+}
+
+function blobToBase64(blob) {
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.split(',')[1]);
+    r.onerror = rej;
+    r.readAsDataURL(blob);
+  });
+}
+
+async function selectActiveEngine() {
+  const priority = getEnginePriority();
+  const settings = getAiSettings();
+  for (const engine of priority) {
+    if (engine === 'amm' && state.amm) return { engine: 'amm', settings };
+    if (engine === 'ollama') {
+      const probe = await probeOllama(settings.ollamaHost);
+      if (probe.ok) return { engine: 'ollama', settings };
+    }
+    if (engine === 'api' && settings.apiBase && settings.apiKey) {
+      const probe = await probeApi(settings.apiBase, settings.apiKey);
+      if (probe.ok) return { engine: 'api', settings };
+    }
+  }
+  return null;
+}
+
+async function probeOllama(host) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch(host + '/api/tags', { signal: controller.signal, mode: 'cors' });
+    clearTimeout(timer);
+    if (!res.ok) return { ok: false, error: 'HTTP ' + res.status };
+    const data = await res.json();
+    const models = (data.models || []).map(m => m.name || m.model);
+    return { ok: true, models };
+  } catch (e) { return { ok: false, error: e.message || 'Connection failed' }; }
+}
+
+async function runOllamaVision(dataUrl, host, model, prompt) {
+  const blob = dataUrlToBlob(dataUrl);
+  const base64 = await blobToBase64(blob);
+  const body = {
+    model,
+    messages: [
+      { role: 'user', content: prompt || 'Read the blood pressure monitor. Return JSON: {sys, dia, bpm}. No prose.', images: [base64] }
+    ],
+    stream: false,
+  };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
+  const res = await fetch(host + '/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: controller.signal,
+    mode: 'cors',
+  });
+  clearTimeout(timer);
+  if (!res.ok) throw new Error('Ollama HTTP ' + res.status);
+  const data = await res.json();
+  const text = data.message?.content || '';
+  return parseVisionResponse(text);
+}
+
+async function probeApi(baseUrl, apiKey) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const res = await fetch(baseUrl + '/models', {
+      signal: controller.signal,
+      mode: 'cors',
+      headers: apiKey ? { 'Authorization': 'Bearer ' + apiKey } : {},
+    });
+    clearTimeout(timer);
+    if (!res.ok) return { ok: false, error: 'HTTP ' + res.status };
+    const data = await res.json();
+    const models = (data.data || []).map(m => m.id || m.model);
+    return { ok: true, models };
+  } catch (e) { return { ok: false, error: e.message || 'Connection failed' }; }
+}
+
+async function runApiVision(dataUrl, baseUrl, apiKey, model, prompt) {
+  const blob = dataUrlToBlob(dataUrl);
+  const base64 = await blobToBase64(blob);
+  const body = {
+    model,
+    messages: [
+      { role: 'user', content: [
+        { type: 'text', text: prompt || 'Read the blood pressure monitor. Return JSON: {sys, dia, bpm}. No prose.' },
+        { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + base64 } }
+      ]}
+    ],
+    max_tokens: 256,
+  };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
+  const res = await fetch(baseUrl + '/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(apiKey ? { 'Authorization': 'Bearer ' + apiKey } : {}),
+    },
+    body: JSON.stringify(body),
+    signal: controller.signal,
+    mode: 'cors',
+  });
+  clearTimeout(timer);
+  if (!res.ok) throw new Error('API HTTP ' + res.status);
+  const data = await res.json();
+  const text = data.choices?.[0]?.message?.content || '';
+  return parseVisionResponse(text);
+}
+
+function parseVisionResponse(text) {
+  let parsed = null;
+  try {
+    const jsonMatch = text.match(/\{[\s\S]*?\}/);
+    if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+  } catch {}
+  if (!parsed) {
+    const nums = text.match(/\d+/g)?.map(Number) || [];
+    if (nums.length >= 2) {
+      parsed = { sys: nums[0], dia: nums[1], bpm: nums[2] ?? null };
+    }
+  }
+  return {
+    sys: parsed?.sys ?? null,
+    dia: parsed?.dia ?? null,
+    hr: parsed?.bpm ?? parsed?.pulse ?? parsed?.hr ?? null,
+    algo: 'vision',
+    rawText: text,
+  };
 }
 
 // ---- Multi-algorithm BP extraction ----------------------------------------
@@ -658,7 +1132,26 @@ function renderOcrTags() {
   }));
 }
 
-document.getElementById('btn-ocr-cancel').addEventListener('click', () => {
+document.getElementById('btn-ocr-cancel').addEventListener('click', async () => {
+  // If there's a pending image, save it to the unprocessed queue instead of discarding
+  if (state.pendingImage && state.pendingEntryId) {
+    const entry = {
+      id: state.pendingEntryId,
+      user_id: state.currentUserId,
+      timestamp: state.pendingImage.timestamp,
+      systolic: null, diastolic: null, heart_rate: null,
+      pulse_pressure: null, mean_arterial_pressure: null, bp_category: null,
+      note: null, tags: [], machine_brand: null,
+      image_ref: state.pendingEntryId,
+      status: 'pending_ocr',
+      ts_source: 'now (no EXIF)',
+      created_at: new Date().toISOString(),
+    };
+    await db.put('entries', entry);
+    const phash = await computePHash(state.pendingImage.blob);
+    await db.put('images', { entry_id: state.pendingEntryId, data: state.pendingImage.blob, phash });
+    await refreshQueue();
+  }
   state.pendingImage = null;
   state.pendingEntryId = null;
   state.fileQueue = [];
@@ -685,11 +1178,14 @@ document.getElementById('btn-ocr-save').addEventListener('click', async () => {
     systolic: sys, diastolic: dia, heart_rate: hr,
     pulse_pressure: pp, mean_arterial_pressure: map, bp_category: cat,
     note, tags: [...ocrTags], machine_brand: brand,
-    image_ref: state.pendingImage ? state.pendingEntryId : null
+    image_ref: state.pendingImage ? state.pendingEntryId : null,
+    status: null,
   };
   await db.put('entries', entry);
   if (state.pendingImage) {
-    await db.put('images', { entry_id: state.pendingEntryId, data: state.pendingImage.blob });
+    const existingImg = await db.get('images', state.pendingEntryId);
+    const phash = existingImg?.phash || await computePHash(state.pendingImage.blob);
+    await db.put('images', { entry_id: state.pendingEntryId, data: state.pendingImage.blob, phash });
   }
   const existing = await db.get('tags', state.currentUserId);
   const merged = new Set([...(existing?.tags||[]), ...ocrTags]);
@@ -873,12 +1369,14 @@ function showDetail(id) {
     const sys = Number(document.getElementById('detail-sys').value);
     const dia = Number(document.getElementById('detail-dia').value);
     const hr = Number(document.getElementById('detail-hr').value);
+    if (!sys || !dia || !hr) return alert('Enter all three values');
     const note = document.getElementById('detail-note').value.trim();
     e.systolic = sys; e.diastolic = dia; e.heart_rate = hr;
     e.pulse_pressure = sys - dia;
     e.mean_arterial_pressure = Math.round(dia + (e.pulse_pressure / 3));
     e.bp_category = computeCategory(sys, dia);
     e.note = note; e.tags = [...detailTags];
+    e.status = null;
     await db.put('entries', e);
     const existing = await db.get('tags', state.currentUserId);
     const merged = new Set([...(existing?.tags||[]), ...detailTags]);
@@ -936,7 +1434,7 @@ function getReportEntries() {
   const e = new Date(document.getElementById('report-end').value).getTime() + 86400000;
   let list = state.entries.filter(x => {
     const t = new Date(x.timestamp).getTime();
-    return t >= s && t < e;
+    return t >= s && t < e && x.status !== 'pending_ocr' && x.status !== 'processing' && x.status !== 'failed' && x.status !== 'skipped';
   });
   if (reportSelectedTags.length) {
     list = list.filter(x => reportSelectedTags.every(t => (x.tags||[]).includes(t)));
@@ -1363,14 +1861,27 @@ async function loadSettings() {
   loadAccessibilitySettings();
   checkAppUpdate();
 
+  // AI Engine settings
+  const s = getAiSettings();
+  document.getElementById('setting-ollama-host').value = s.ollamaHost;
+  document.getElementById('setting-ollama-model').value = s.ollamaModel;
+  document.getElementById('setting-api-base').value = s.apiBase;
+  document.getElementById('setting-api-key').value = s.apiKey;
+  document.getElementById('setting-api-model').value = s.apiModel;
+  document.getElementById('setting-prompt').value = s.prompt;
+  document.getElementById('setting-batch-delay').value = String(s.batchDelay);
+  document.getElementById('setting-auto-process').checked = s.autoProcess;
+  document.getElementById('setting-save-low-confidence').checked = s.saveLowConfidence;
+  renderEnginePriority();
+
   // Update AMM status pill
   const ammEl = document.getElementById('amm-status');
   if (ammEl) {
     if (state.amm) {
       const model = state.amm.models?.vision || 'vision model';
-      ammEl.innerHTML = `<span style="color:var(--success)">●</span> AMM detected — ${model}`;
+      ammEl.innerHTML = '<span style="color:var(--success)">●</span> AMM detected — ' + model;
     } else {
-      ammEl.innerHTML = `<span style="color:var(--muted)">○</span> AMM not detected — install AMM app and start HTTP service`;
+      ammEl.innerHTML = '<span style="color:var(--muted)">○</span> AMM not detected — install AMM app and start HTTP service';
     }
   }
 }
@@ -1603,6 +2114,227 @@ document.getElementById('btn-run-diagnostics')?.addEventListener('click', () => 
   runNetworkDiagnostics();
 });
 
+function checkConfidence(values) {
+  const { sys, dia, hr } = values;
+  if (!sys || !dia) return { level: 'RED', reason: 'Missing values' };
+  if (sys < 90 || sys > 220 || dia < 50 || dia > 130 || sys <= dia) return { level: 'RED', reason: 'Out of range' };
+  if (hr && (hr < 40 || hr > 180)) return { level: 'RED', reason: 'HR out of range' };
+  const pp = sys - dia;
+  if (pp < 20 || pp > 100) return { level: 'AMBER', reason: 'Unusual pulse pressure' };
+  return { level: 'GREEN', reason: 'OK' };
+}
+
+async function startBatchProcessing() {
+  if (state.isProcessing) return;
+  state.isProcessing = true;
+  state.pauseRequested = false;
+  updateQueueUIState();
+
+  while (state.isProcessing) {
+    if (state.pauseRequested) { state.isProcessing = false; break; }
+    const pending = state.queue.filter(q => q.status === 'pending_ocr');
+    if (!pending.length) { state.isProcessing = false; break; }
+
+    const entry = pending[0];
+    entry.status = 'processing';
+    await db.put('entries', entry);
+    await refreshQueue();
+    renderQueue();
+
+    try {
+      const img = await db.get('images', entry.id);
+      if (!img || !img.data) throw new Error('Image not found');
+
+      let blob = img.data;
+      try {
+        blob = await preprocessImage(blob, { minDimension: 1800, rotation: 0 });
+      } catch (e) { console.warn('[Batch] Preprocess failed, using original', e); }
+
+      const dataUrl = await blobToDataUrl(blob);
+      const engineInfo = await selectActiveEngine();
+      if (!engineInfo) throw new Error('No AI engine available. Configure Ollama or API in Settings.');
+
+      let values;
+      const settings = engineInfo.settings;
+      const prompt = settings.prompt;
+      if (engineInfo.engine === 'amm') {
+        values = await runAmmVision(dataUrl, prompt);
+      } else if (engineInfo.engine === 'ollama') {
+        values = await runOllamaVision(dataUrl, settings.ollamaHost, settings.ollamaModel, prompt);
+      } else if (engineInfo.engine === 'api') {
+        values = await runApiVision(dataUrl, settings.apiBase, settings.apiKey, settings.apiModel, prompt);
+      } else {
+        throw new Error('No engine');
+      }
+
+      let confidence = checkConfidence(values);
+      if (confidence.level === 'RED') {
+        console.log('[Batch] Retry with stricter prompt');
+        const retryPrompt = (prompt || '') + ' Return valid JSON only.';
+        let retryValues;
+        if (engineInfo.engine === 'amm') retryValues = await runAmmVision(dataUrl, retryPrompt);
+        else if (engineInfo.engine === 'ollama') retryValues = await runOllamaVision(dataUrl, settings.ollamaHost, settings.ollamaModel, retryPrompt);
+        else retryValues = await runApiVision(dataUrl, settings.apiBase, settings.apiKey, settings.apiModel, retryPrompt);
+        confidence = checkConfidence(retryValues);
+        if (confidence.level !== 'RED') values = retryValues;
+      }
+
+      if (confidence.level === 'RED') {
+        entry.status = 'failed';
+        await db.put('entries', entry);
+      } else {
+        entry.systolic = values.sys;
+        entry.diastolic = values.dia;
+        entry.heart_rate = values.hr || null;
+        entry.pulse_pressure = values.sys - values.dia;
+        entry.mean_arterial_pressure = Math.round(entry.diastolic + (entry.pulse_pressure / 3));
+        entry.bp_category = computeCategory(values.sys, values.dia);
+        if (confidence.level === 'AMBER') {
+          entry.status = settings.saveLowConfidence ? 'done' : 'low_confidence';
+        } else {
+          entry.status = 'done';
+        }
+        await db.put('entries', entry);
+      }
+    } catch (e) {
+      console.error('[Batch] Processing error', e);
+      entry.status = 'failed';
+      await db.put('entries', entry);
+    }
+
+    await refreshQueue();
+    renderQueue();
+    if (state.pauseRequested) { state.isProcessing = false; break; }
+    const delay = getAiSettings().batchDelay;
+    await new Promise(r => setTimeout(r, delay));
+  }
+
+  state.isProcessing = false;
+  state.pauseRequested = false;
+  updateQueueUIState();
+  await loadData();
+}
+
+function stopBatchProcessing() {
+  state.pauseRequested = true;
+}
+
+function updateQueueUIState() {
+  const processBtn = document.getElementById('btn-process-all');
+  const pauseBtn = document.getElementById('btn-pause-all');
+  if (!processBtn || !pauseBtn) return;
+  if (state.isProcessing) {
+    processBtn.style.display = 'none';
+    pauseBtn.style.display = 'inline-flex';
+  } else {
+    processBtn.style.display = 'inline-flex';
+    pauseBtn.style.display = 'none';
+  }
+}
+
+// =================== Queue Screen Rendering ===================
+function renderQueue() {
+  const container = document.getElementById('queue-entries');
+  const empty = document.getElementById('queue-empty');
+  const totalCount = document.getElementById('queue-total-count');
+  const progressWrap = document.getElementById('queue-progress-wrap');
+  const progressBar = document.getElementById('queue-progress-bar');
+  const progressText = document.getElementById('queue-progress-text');
+
+  const list = state.queue.slice().sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  totalCount.textContent = '(' + list.length + ')';
+
+  if (!list.length) {
+    container.innerHTML = '';
+    empty.style.display = 'block';
+    progressWrap.style.display = 'none';
+    progressText.textContent = '';
+    return;
+  }
+  empty.style.display = 'none';
+
+  const done = list.filter(q => q.status === 'done' || q.status === 'low_confidence').length;
+  const total = list.length;
+  const pct = total ? Math.round((done / total) * 100) : 0;
+  progressWrap.style.display = 'flex';
+  progressBar.style.width = pct + '%';
+  progressText.textContent = done + ' / ' + total + ' processed';
+
+  container.innerHTML = list.map(e => queueRowHTML(e)).join('');
+  list.forEach(e => {
+    const row = document.getElementById('queue-row-' + e.id);
+    if (!row) return;
+    const thumb = row.querySelector('.queue-thumb');
+    db.get('images', e.id).then(img => {
+      if (img && img.data) thumb.src = URL.createObjectURL(img.data);
+    });
+    row.querySelector('.btn-process')?.addEventListener('click', () => { e.status = 'pending_ocr'; db.put('entries', e).then(refreshQueue).then(renderQueue); });
+    row.querySelector('.btn-retry')?.addEventListener('click', () => { e.status = 'pending_ocr'; db.put('entries', e).then(refreshQueue).then(renderQueue).then(() => { if (!state.isProcessing) startBatchProcessing(); }); });
+    row.querySelector('.btn-delete')?.addEventListener('click', () => showModal('Delete this queued photo?', async () => { await db.delete('entries', e.id); await db.delete('images', e.id); await refreshQueue(); renderQueue(); }));
+    row.querySelector('.btn-edit')?.addEventListener('click', () => showQueueEdit(e.id));
+    row.querySelector('.btn-skip')?.addEventListener('click', () => { e.status = 'skipped'; db.put('entries', e).then(refreshQueue).then(renderQueue); });
+    row.querySelector('.btn-enter')?.addEventListener('click', () => showQueueEdit(e.id));
+  });
+}
+
+function queueRowHTML(e) {
+  const ts = e.timestamp ? fmtDate(e.timestamp) : 'Unknown';
+  const noExif = e.ts_source === 'now (no EXIF)';
+  const statusMap = {
+    pending_ocr: { chip: 'status-pending', icon: '\u23F3', text: 'Pending' },
+    processing: { chip: 'status-processing', icon: '\uD83D\uDD04', text: 'Processing' },
+    done: { chip: 'status-done', icon: '\u2705', text: 'Done — ' + (e.systolic || '?') + '/' + (e.diastolic || '?') + ' \u00B7 ' + (e.heart_rate || '?') },
+    low_confidence: { chip: 'status-low-confidence', icon: '\u26A0\uFE0F', text: 'Low Confidence — ' + (e.systolic || '?') + '/' + (e.diastolic || '?') },
+    failed: { chip: 'status-failed', icon: '\u274C', text: 'Failed — low confidence' },
+    skipped: { chip: 'status-skipped', icon: '\u23ED\uFE0F', text: 'Skipped' },
+  };
+  const s = statusMap[e.status] || statusMap.pending_ocr;
+  let actions = '';
+  if (e.status === 'pending_ocr') {
+    actions = '<button class="btn btn-outline btn-process" style="font-size:12px;padding:4px 8px;min-height:28px">Process</button><button class="btn btn-outline btn-skip" style="font-size:12px;padding:4px 8px;min-height:28px">Skip</button><button class="btn btn-danger btn-delete" style="font-size:12px;padding:4px 8px;min-height:28px">Delete</button>';
+  } else if (e.status === 'processing') {
+    actions = '<button class="btn btn-outline btn-delete" style="font-size:12px;padding:4px 8px;min-height:28px">Delete</button>';
+  } else if (e.status === 'done' || e.status === 'low_confidence') {
+    actions = '<button class="btn btn-outline btn-edit" style="font-size:12px;padding:4px 8px;min-height:28px">Edit</button><button class="btn btn-danger btn-delete" style="font-size:12px;padding:4px 8px;min-height:28px">Delete</button>';
+  } else if (e.status === 'failed') {
+    actions = '<button class="btn btn-outline btn-retry" style="font-size:12px;padding:4px 8px;min-height:28px">Retry</button><button class="btn btn-outline btn-enter" style="font-size:12px;padding:4px 8px;min-height:28px">Enter Manually</button><button class="btn btn-danger btn-delete" style="font-size:12px;padding:4px 8px;min-height:28px">Delete</button>';
+  } else if (e.status === 'skipped') {
+    actions = '<button class="btn btn-outline btn-retry" style="font-size:12px;padding:4px 8px;min-height:28px">Retry</button><button class="btn btn-danger btn-delete" style="font-size:12px;padding:4px 8px;min-height:28px">Delete</button>';
+  }
+
+  return '<div class="queue-row ' + e.status + '" id="queue-row-' + e.id + '">' +
+    '<img class="queue-thumb" src="" alt="" />' +
+    '<div class="queue-body">' +
+      '<div class="queue-meta">' + ts + (noExif ? ' <span class="badge" style="font-size:10px">(no EXIF)</span>' : '') + '</div>' +
+      '<div class="status-chip ' + s.chip + '">' + s.icon + ' ' + s.text + '</div>' +
+      '<div class="queue-actions mt-2">' + actions + '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function showQueueEdit(entryId) {
+  const e = state.queue.find(q => q.id === entryId);
+  if (!e) return;
+  showScreen('ocr');
+  state.pendingEntryId = e.id;
+  db.get('images', e.id).then(img => {
+    if (img && img.data) {
+      state.pendingImage = { blob: img.data, dataUrl: URL.createObjectURL(img.data), timestamp: e.timestamp };
+      document.getElementById('ocr-preview').src = state.pendingImage.dataUrl;
+    }
+  });
+  document.getElementById('ocr-timestamp').value = toDatetimeLocal(e.timestamp);
+  document.getElementById('ocr-ts-source').textContent = '(' + (e.ts_source || 'unknown') + ')';
+  document.getElementById('ocr-sys').value = e.systolic || '';
+  document.getElementById('ocr-dia').value = e.diastolic || '';
+  document.getElementById('ocr-hr').value = e.heart_rate || '';
+  document.getElementById('ocr-note').value = e.note || '';
+  document.getElementById('ocr-brand').value = e.machine_brand || '';
+  ocrTags.length = 0;
+  if (e.tags) e.tags.forEach(t => ocrTags.push(t));
+  renderOcrTags();
+}
+
 // =================== Modal / Loading ===================
 function showModal(message, onConfirm) {
   document.getElementById('modal-body').textContent = message;
@@ -1645,6 +2377,151 @@ document.getElementById('btn-add-user').addEventListener('click', () => {
   addUser(name);
   document.getElementById('new-user-name').value = '';
 });
+
+// =================== Batch Upload ===================
+document.getElementById('btn-batch-upload').addEventListener('click', () => {
+  document.getElementById('input-batch').click();
+});
+document.getElementById('input-batch').addEventListener('change', async (ev) => {
+  const files = Array.from(ev.target.files);
+  if (!files.length) return;
+  await processBatchFiles(files);
+  ev.target.value = '';
+});
+
+// Drag and drop
+const dropZone = document.getElementById('drop-zone');
+['dragenter','dragover','dragleave','drop'].forEach(evt => {
+  dropZone?.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); });
+});
+['dragenter','dragover'].forEach(evt => {
+  dropZone?.addEventListener(evt, () => dropZone.classList.add('drag-over'));
+});
+['dragleave','drop'].forEach(evt => {
+  dropZone?.addEventListener(evt, () => dropZone.classList.remove('drag-over'));
+});
+dropZone?.addEventListener('drop', async (e) => {
+  const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+  if (files.length) await processBatchFiles(files);
+});
+
+// Show drop zone on desktop
+if (window.matchMedia('(min-width: 768px)').matches) {
+  dropZone.style.display = 'block';
+}
+
+// Queue home card
+document.getElementById('btn-queue-process-now')?.addEventListener('click', () => {
+  showScreen('queue');
+  startBatchProcessing();
+});
+document.getElementById('btn-queue-dismiss')?.addEventListener('click', () => {
+  localStorage.setItem('bplog_queue_card_dismissed', '1');
+  document.getElementById('queue-home-card').style.display = 'none';
+});
+
+// Header queue badge
+document.getElementById('header-queue-badge')?.addEventListener('click', () => {
+  showScreen('queue');
+  renderQueue();
+});
+
+// Queue screen buttons
+document.getElementById('btn-process-all')?.addEventListener('click', () => startBatchProcessing());
+document.getElementById('btn-pause-all')?.addEventListener('click', () => stopBatchProcessing());
+document.getElementById('btn-queue-settings')?.addEventListener('click', () => showScreen('settings'));
+
+// Navigation hook for queue
+document.querySelector('header .nav-btn[data-screen="queue"]')?.addEventListener('click', () => {
+  showScreen('queue');
+  renderQueue();
+});
+
+// =================== AI Engine Settings Events ===================
+function saveAiSettings() {
+  localStorage.setItem('bplog_ollama_host', document.getElementById('setting-ollama-host').value.trim() || 'http://localhost:11434');
+  localStorage.setItem('bplog_ollama_model', document.getElementById('setting-ollama-model').value.trim() || 'llava:7b');
+  localStorage.setItem('bplog_api_base_url', document.getElementById('setting-api-base').value.trim());
+  localStorage.setItem('bplog_api_key', document.getElementById('setting-api-key').value.trim());
+  localStorage.setItem('bplog_api_model', document.getElementById('setting-api-model').value.trim() || 'gpt-4o-mini');
+  localStorage.setItem('bplog_default_prompt', document.getElementById('setting-prompt').value.trim());
+  localStorage.setItem('bplog_batch_delay_ms', document.getElementById('setting-batch-delay').value);
+  localStorage.setItem('bplog_auto_process', document.getElementById('setting-auto-process').checked ? 'true' : 'false');
+  localStorage.setItem('bplog_save_low_confidence', document.getElementById('setting-save-low-confidence').checked ? 'true' : 'false');
+}
+
+['setting-ollama-host','setting-ollama-model','setting-api-base','setting-api-model','setting-prompt','setting-batch-delay'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', saveAiSettings);
+});
+document.getElementById('setting-api-key')?.addEventListener('input', saveAiSettings);
+document.getElementById('setting-auto-process')?.addEventListener('change', saveAiSettings);
+document.getElementById('setting-save-low-confidence')?.addEventListener('change', saveAiSettings);
+
+document.getElementById('btn-api-key-show')?.addEventListener('click', () => {
+  const el = document.getElementById('setting-api-key');
+  el.type = el.type === 'password' ? 'text' : 'password';
+});
+document.getElementById('btn-api-key-clear')?.addEventListener('click', () => {
+  document.getElementById('setting-api-key').value = '';
+  saveAiSettings();
+});
+
+document.getElementById('btn-reset-prompt')?.addEventListener('click', () => {
+  document.getElementById('setting-prompt').value = 'Read the blood pressure monitor. Return JSON: {sys, dia, bpm}. No prose.';
+  saveAiSettings();
+});
+
+document.getElementById('btn-test-ollama')?.addEventListener('click', async () => {
+  const status = document.getElementById('ollama-test-status');
+  status.textContent = 'Testing…';
+  const host = document.getElementById('setting-ollama-host').value.trim() || 'http://localhost:11434';
+  const res = await probeOllama(host);
+  if (res.ok) status.innerHTML = '<span style="color:var(--success)">Connected · ' + res.models.slice(0,3).join(', ') + '</span>';
+  else status.innerHTML = '<span style="color:var(--danger)">Error: ' + escapeHtml(res.error) + '</span>';
+});
+
+document.getElementById('btn-test-api')?.addEventListener('click', async () => {
+  const status = document.getElementById('api-test-status');
+  status.textContent = 'Testing…';
+  const base = document.getElementById('setting-api-base').value.trim();
+  const key = document.getElementById('setting-api-key').value.trim();
+  if (!base) { status.innerHTML = '<span style="color:var(--warning)">Not configured</span>'; return; }
+  const res = await probeApi(base, key);
+  if (res.ok) status.innerHTML = '<span style="color:var(--success)">Connected · ' + res.models.slice(0,3).join(', ') + '</span>';
+  else status.innerHTML = '<span style="color:var(--danger)">Error: ' + escapeHtml(res.error) + '</span>';
+});
+
+// Engine priority drag-and-drop
+function renderEnginePriority() {
+  const container = document.getElementById('engine-priority-list');
+  if (!container) return;
+  const priority = getEnginePriority();
+  const labels = { amm: '🔵 AMM Bridge', ollama: '🟢 Ollama (local)', api: '🟡 OpenAI-compatible API', template: '🟠 7-Segment Template Matcher' };
+  container.innerHTML = priority.map((engine, i) =>
+    '<div class="engine-priority-item" draggable="true" data-engine="' + engine + '" data-index="' + i + '">' +
+      '<span class="drag-handle">☰</span>' + (labels[engine] || engine) +
+    '</div>'
+  ).join('');
+  container.querySelectorAll('.engine-priority-item').forEach(item => {
+    item.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', item.dataset.index);
+      item.classList.add('dragging');
+    });
+    item.addEventListener('dragend', () => item.classList.remove('dragging'));
+    item.addEventListener('dragover', (e) => e.preventDefault());
+    item.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const fromIdx = Number(e.dataTransfer.getData('text/plain'));
+      const toIdx = Number(item.dataset.index);
+      const list = getEnginePriority();
+      const moved = list.splice(fromIdx, 1)[0];
+      list.splice(toIdx, 0, moved);
+      saveEnginePriority(list);
+      renderEnginePriority();
+    });
+  });
+}
 
 // =================== PWA Install Prompt ===================
 window.addEventListener('beforeinstallprompt', e => {
@@ -2031,5 +2908,7 @@ async function runNetworkDiagnostics() {
     console.warn('  3. Toggle HTTP service ON');
     console.warn('  4. Return to BPLog and tap "AI ON" if needed');
   }
+  // Check for unprocessed queue on startup
+  if (state.currentUserId) await refreshQueue();
   loadSettings();
 })();
