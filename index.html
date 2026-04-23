@@ -180,6 +180,11 @@
           </div>
           <div class="tag-list" id="log-tag-filters"></div>
         </div>
+        <div class="log-actions flex gap-2 mt-2" id="log-actions-bar" style="display:none">
+          <button class="btn btn-danger" id="btn-log-delete-selected">Delete Selected</button>
+          <button class="btn btn-primary" id="btn-log-reprocess-selected">Re-process Selected</button>
+          <span class="text-muted" id="log-selected-count" style="align-self:center"></span>
+        </div>
         <div id="log-entries"></div>
         <div id="log-empty" class="empty" style="display:none">No readings found.</div>
       </section>

@@ -478,6 +478,7 @@ function showScreen(id) {
   if (id === 'images') renderImages();
   if (id === 'settings') loadSettings();
   if (id === 'queue') renderQueue();
+  if (id !== 'logs') { logSelectedIds.clear(); }
 }
 document.querySelectorAll('header .nav-btn').forEach(b => {
   b.addEventListener('click', () => showScreen(b.dataset.screen));
@@ -567,25 +568,29 @@ function renderRecent() {
   loadLogThumbnails(recent);
 }
 
+let logSelectedIds = new Set();
+
 function entryRowHTML(e) {
   const isPending = e.status === 'pending_ocr' || e.status === 'processing' || e.status === 'failed' || e.status === 'skipped';
   const tags = (e.tags || []).map(t => '<span class="tag-chip" style="background:' + hashColor(t) + '22;color:' + hashColor(t) + '">' + escapeHtml(t) + '</span>').join('');
   const note = e.note ? '<div class="text-muted" style="margin-top:4px">' + escapeHtml(e.note.slice(0,60)) + (e.note.length>60?'…':'') + '</div>' : '';
   const thumbSrc = e.image_ref ? '' : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
   const noExif = e.ts_source === 'now (no EXIF)';
+  const checked = logSelectedIds.has(e.id) ? 'checked' : '';
   let valuesHtml;
   if (isPending) {
     const chipMap = {
-      pending_ocr: '⏳ Pending',
-      processing: '🔄 Processing',
-      failed: '❌ Failed',
-      skipped: '⏭ Skipped',
+      pending_ocr: '\u23F3 Pending',
+      processing: '\uD83D\uDD04 Processing',
+      failed: '\u274C Failed',
+      skipped: '\u23ED\uFE0F Skipped',
     };
     valuesHtml = '<span class="badge" style="background:#e9ecef;color:#495057">' + (chipMap[e.status] || 'Pending') + '</span>';
   } else {
     valuesHtml = renderBadge(e.bp_category, e.systolic + '/' + e.diastolic) + '<span class="badge">' + e.heart_rate + ' bpm</span>';
   }
   return '<div class="entry-row ' + (isPending ? 'pending-entry' : '') + '" id="entry-row-' + e.id + '">' +
+    '<input type="checkbox" class="entry-select" data-id="' + e.id + '" ' + checked + ' title="Select" />' +
     '<img class="entry-thumb" src="' + thumbSrc + '" data-img="' + (e.image_ref||'') + '" id="thumb-' + e.id + '" />' +
     '<div class="entry-body">' +
       '<div class="entry-meta">' + fmtDate(e.timestamp) + (noExif ? ' <span class="badge" style="font-size:10px">(no EXIF)</span>' : '') + '</div>' +
@@ -1263,10 +1268,55 @@ function renderLogTags() {
   }));
 }
 
-document.getElementById('filter-start').addEventListener('change', e => { logFilterStart = e.target.value; renderLogs(); });
-document.getElementById('filter-end').addEventListener('change', e => { logFilterEnd = e.target.value; renderLogs(); });
-document.getElementById('filter-category').addEventListener('change', e => { logFilterCategory = e.target.value; renderLogs(); });
-document.getElementById('filter-sort').addEventListener('change', e => { logSort = e.target.value; renderLogs(); });
+document.getElementById('filter-start').addEventListener('change', e => { logFilterStart = e.target.value; logSelectedIds.clear(); renderLogs(); });
+document.getElementById('filter-end').addEventListener('change', e => { logFilterEnd = e.target.value; logSelectedIds.clear(); renderLogs(); });
+document.getElementById('filter-category').addEventListener('change', e => { logFilterCategory = e.target.value; logSelectedIds.clear(); renderLogs(); });
+document.getElementById('filter-sort').addEventListener('change', e => { logSort = e.target.value; logSelectedIds.clear(); renderLogs(); });
+
+// Log bulk actions
+document.getElementById('btn-log-delete-selected')?.addEventListener('click', async () => {
+  if (!logSelectedIds.size) return;
+  showModal('Delete ' + logSelectedIds.size + ' selected reading(s)?', async () => {
+    for (const id of Array.from(logSelectedIds)) {
+      await db.delete('entries', id);
+      await db.delete('images', id);
+    }
+    logSelectedIds.clear();
+    await loadData();
+    renderLogs();
+  });
+});
+
+document.getElementById('btn-log-reprocess-selected')?.addEventListener('click', async () => {
+  if (!logSelectedIds.size) return;
+  const withImages = Array.from(logSelectedIds).filter(id => {
+    const e = state.entries.find(x => x.id === id);
+    return e && e.image_ref;
+  });
+  if (!withImages.length) return alert('Selected entries have no images to re-process.');
+  for (const id of withImages) {
+    const e = state.entries.find(x => x.id === id);
+    if (!e) continue;
+    e.status = 'pending_ocr';
+    e.systolic = null; e.diastolic = null; e.heart_rate = null;
+    e.pulse_pressure = null; e.mean_arterial_pressure = null; e.bp_category = null;
+    e.note = null; e.tags = []; e.machine_brand = null;
+    await db.put('entries', e);
+  }
+  logSelectedIds.clear();
+  await loadData();
+  renderLogs();
+  await refreshQueue();
+  // Optionally auto-start processing
+  const settings = getAiSettings();
+  if (settings.autoProcess) {
+    showScreen('queue');
+    startBatchProcessing();
+  } else {
+    showScreen('queue');
+    renderQueue();
+  }
+});
 
 function renderLogs() {
   let list = state.entries.slice();
@@ -1294,9 +1344,30 @@ function renderLogs() {
   document.getElementById('log-empty').style.display = list.length ? 'none' : 'block';
   if (!list.length) { container.innerHTML = ''; return; }
   container.innerHTML = list.map(e => entryRowHTML(e)).join('');
+
+  // Update action bar
+  const actionBar = document.getElementById('log-actions-bar');
+  const countEl = document.getElementById('log-selected-count');
+  if (logSelectedIds.size > 0) {
+    actionBar.style.display = 'flex';
+    countEl.textContent = logSelectedIds.size + ' selected';
+  } else {
+    actionBar.style.display = 'none';
+  }
+
   list.forEach(e => {
     const row = document.getElementById('entry-row-' + e.id);
-    row.addEventListener('click', () => showDetail(e.id));
+    const checkbox = row.querySelector('.entry-select');
+    checkbox.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      if (checkbox.checked) logSelectedIds.add(e.id);
+      else logSelectedIds.delete(e.id);
+      renderLogs();
+    });
+    row.addEventListener('click', (ev) => {
+      if (ev.target.closest('.entry-select')) return;
+      showDetail(e.id);
+    });
   });
   loadLogThumbnails(list);
 }
