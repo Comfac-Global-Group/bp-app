@@ -1935,7 +1935,15 @@ async function loadSettings() {
   // AI Engine settings
   const s = getAiSettings();
   document.getElementById('setting-ollama-host').value = s.ollamaHost;
-  document.getElementById('setting-ollama-model').value = s.ollamaModel;
+  const ollamaModelSelect = document.getElementById('setting-ollama-model');
+  ollamaModelSelect.innerHTML = '';
+  if (s.ollamaModel) {
+    const opt = document.createElement('option');
+    opt.value = s.ollamaModel;
+    opt.textContent = s.ollamaModel;
+    ollamaModelSelect.appendChild(opt);
+    ollamaModelSelect.value = s.ollamaModel;
+  }
   document.getElementById('setting-api-base').value = s.apiBase;
   document.getElementById('setting-api-key').value = s.apiKey;
   document.getElementById('setting-api-model').value = s.apiModel;
@@ -2547,11 +2555,26 @@ document.getElementById('btn-reset-prompt')?.addEventListener('click', () => {
 
 document.getElementById('btn-test-ollama')?.addEventListener('click', async () => {
   const status = document.getElementById('ollama-test-status');
+  const modelSelect = document.getElementById('setting-ollama-model');
   status.textContent = 'Testing…';
   const host = document.getElementById('setting-ollama-host').value.trim() || 'http://localhost:11434';
   const res = await probeOllama(host);
-  if (res.ok) status.innerHTML = '<span style="color:var(--success)">Connected · ' + res.models.slice(0,3).join(', ') + '</span>';
-  else status.innerHTML = '<span style="color:var(--danger)">Error: ' + escapeHtml(res.error) + '</span>';
+  if (res.ok) {
+    const previous = modelSelect.value;
+    modelSelect.innerHTML = '';
+    res.models.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m;
+      opt.textContent = m;
+      modelSelect.appendChild(opt);
+    });
+    if (res.models.includes(previous)) modelSelect.value = previous;
+    else if (res.models.length) modelSelect.value = res.models[0];
+    saveAiSettings();
+    status.innerHTML = '<span style="color:var(--success)">Connected · ' + res.models.length + ' model(s) loaded</span>';
+  } else {
+    status.innerHTML = '<span style="color:var(--danger)">Error: ' + escapeHtml(res.error) + '</span>';
+  }
 });
 
 document.getElementById('btn-test-api')?.addEventListener('click', async () => {
