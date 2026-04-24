@@ -952,7 +952,7 @@ async function runOllamaVision(dataUrl, host, model, prompt) {
     stream: false,
   };
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 60000);
+  const timer = setTimeout(() => controller.abort(), 120000);
   const res = await fetch(host + '/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -998,7 +998,7 @@ async function runApiVision(dataUrl, baseUrl, apiKey, model, prompt) {
     max_tokens: 256,
   };
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 60000);
+  const timer = setTimeout(() => controller.abort(), 120000);
   const res = await fetch(baseUrl + '/chat/completions', {
     method: 'POST',
     headers: {
@@ -2203,7 +2203,7 @@ async function startBatchProcessing() {
 
   while (state.isProcessing) {
     if (state.pauseRequested) { state.isProcessing = false; break; }
-    const pending = state.queue.filter(q => q.status === 'pending_ocr');
+    const pending = state.queue.filter(q => q.status === 'pending_ocr').sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
     if (!pending.length) { state.isProcessing = false; break; }
 
     const entry = pending[0];
@@ -2783,7 +2783,7 @@ async function runAmmVision(dataUrl, prompt) {
 
   console.log('[OCR] Stage 2/4: Sending to AMM (127.0.0.1:8765)...');
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
+  const timer = setTimeout(() => controller.abort(), 120000);
   const res = await fetch('http://127.0.0.1:8765/v1/vision/completions', {
     method: 'POST',
     body: formData,
