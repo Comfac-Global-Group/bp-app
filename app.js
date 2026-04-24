@@ -1372,6 +1372,165 @@ function renderLogs() {
   loadLogThumbnails(list);
 }
 
+// =================== Duplicate Finder (Logs) ===================
+async function findDuplicateGroups(userId) {
+  const entries = (await db.getAll('entries')).filter(e => e.user_id === userId);
+  const images = await db.getAll('images');
+  const entryImages = {};
+  images.forEach(img => { if (entries.find(e => e.id === img.entry_id)) entryImages[img.entry_id] = img; });
+
+  const visited = new Set();
+  const groups = [];
+
+  for (const e of entries) {
+    if (visited.has(e.id)) continue;
+    const group = [e];
+
+    for (const other of entries) {
+      if (other.id === e.id || visited.has(other.id)) continue;
+      const imgB = entryImages[other.id];
+      let isDup = false;
+      for (const member of group) {
+        const imgA = entryImages[member.id];
+        if (imgA && imgB && imgA.phash && imgB.phash) {
+          if (hammingDistance(imgA.phash, imgB.phash) <= 8) { isDup = true; break; }
+        } else if (!imgA && !imgB) {
+          if (member.timestamp === other.timestamp && member.systolic === other.systolic && member.diastolic === other.diastolic && member.heart_rate === other.heart_rate) { isDup = true; break; }
+        }
+      }
+      if (isDup) group.push(other);
+    }
+
+    if (group.length > 1) {
+      group.forEach(x => visited.add(x.id));
+      groups.push(group.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp)));
+    }
+  }
+
+  return groups;
+}
+
+function renderDuplicateGroup(group) {
+  const rows = group.map(e => {
+    const vals = e.systolic ? `${e.systolic}/${e.diastolic} · ${e.heart_rate} bpm` : 'No readings';
+    const tags = (e.tags || []).map(t => `<span class="tag-chip" style="background:${hashColor(t)}22;color:${hashColor(t)}">${escapeHtml(t)}</span>`).join('');
+    const note = e.note ? escapeHtml(e.note) : '';
+    return `
+      <div class="dup-row" style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+        <img class="entry-thumb" src="" data-img="${e.image_ref||''}" id="dup-thumb-${e.id}" style="width:48px;height:48px;object-fit:cover;border-radius:6px" />
+        <div style="flex:1;font-size:12px">
+          <div><strong>${fmtDate(e.timestamp)}</strong> · ${vals}</div>
+          <div class="tag-list">${tags}</div>
+          ${note ? `<div class="text-muted">${note}</div>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="dup-group" style="margin-bottom:12px;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--card-bg)">
+      <div style="font-size:12px;font-weight:600;margin-bottom:6px">${group.length} duplicate readings</div>
+      ${rows}
+      <div class="flex gap-2 mt-2">
+        <button class="btn btn-primary btn-merge-dup" data-ids="${group.map(x=>x.id).join(',')}" style="font-size:12px;padding:4px 10px;min-height:28px">Merge (keep oldest)</button>
+        <button class="btn btn-danger btn-delete-dup" data-ids="${group.map(x=>x.id).join(',')}" style="font-size:12px;padding:4px 10px;min-height:28px">Delete All</button>
+      </div>
+    </div>
+  `;
+}
+
+async function renderDuplicates() {
+  const container = document.getElementById('log-duplicates-list');
+  const card = document.getElementById('log-duplicates-card');
+  container.innerHTML = '<div class="empty">Scanning…</div>';
+  card.style.display = 'block';
+
+  const groups = await findDuplicateGroups(state.currentUserId);
+  if (!groups.length) {
+    container.innerHTML = '<div class="empty">No duplicates found.</div>';
+    return;
+  }
+
+  container.innerHTML = groups.map(g => renderDuplicateGroup(g)).join('');
+
+  groups.flat().forEach(e => {
+    const img = document.getElementById('dup-thumb-' + e.id);
+    if (!img) return;
+    db.get('images', e.id).then(blob => {
+      if (blob && blob.data) img.src = URL.createObjectURL(blob.data);
+    });
+  });
+
+  container.querySelectorAll('.btn-merge-dup').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const ids = btn.dataset.ids.split(',');
+      const group = ids.map(id => state.entries.find(e => e.id === id)).filter(Boolean);
+      if (!group.length) return;
+      await mergeDuplicateGroup(group);
+    });
+  });
+
+  container.querySelectorAll('.btn-delete-dup').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const ids = btn.dataset.ids.split(',');
+      showModal(`Delete ${ids.length} duplicate readings?`, async () => {
+        for (const id of ids) {
+          await db.delete('entries', id);
+          await db.delete('images', id);
+        }
+        logSelectedIds = new Set([...logSelectedIds].filter(x => !ids.includes(x)));
+        await loadData();
+        renderLogs();
+        await renderDuplicates();
+      });
+    });
+  });
+}
+
+async function mergeDuplicateGroup(group) {
+  group.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  const keep = group[0];
+  const discard = group.slice(1);
+
+  const allTags = new Set([...(keep.tags || [])]);
+  discard.forEach(e => (e.tags || []).forEach(t => allTags.add(t)));
+  keep.tags = Array.from(allTags);
+
+  const notes = [keep.note, ...discard.map(e => e.note)].filter(Boolean);
+  const uniqueNotes = [...new Set(notes)];
+  if (uniqueNotes.length) keep.note = uniqueNotes.join(' / ');
+
+  discard.forEach(e => {
+    if (!keep.systolic && e.systolic) keep.systolic = e.systolic;
+    if (!keep.diastolic && e.diastolic) keep.diastolic = e.diastolic;
+    if (!keep.heart_rate && e.heart_rate) keep.heart_rate = e.heart_rate;
+    if (!keep.machine_brand && e.machine_brand) keep.machine_brand = e.machine_brand;
+  });
+
+  if (keep.systolic && keep.diastolic) {
+    keep.pulse_pressure = keep.systolic - keep.diastolic;
+    keep.mean_arterial_pressure = Math.round(keep.diastolic + (keep.pulse_pressure / 3));
+    keep.bp_category = computeCategory(keep.systolic, keep.diastolic);
+  }
+
+  await db.put('entries', keep);
+
+  for (const e of discard) {
+    await db.delete('entries', e.id);
+    await db.delete('images', e.id);
+  }
+
+  logSelectedIds = new Set([...logSelectedIds].filter(x => !discard.find(d => d.id === x)));
+  await loadData();
+  renderLogs();
+  await renderDuplicates();
+}
+
+document.getElementById('btn-find-duplicates')?.addEventListener('click', renderDuplicates);
+document.getElementById('btn-hide-duplicates')?.addEventListener('click', () => {
+  document.getElementById('log-duplicates-card').style.display = 'none';
+});
+
 // =================== Detail ===================
 function showDetail(id) {
   const e = state.entries.find(x => x.id === id);

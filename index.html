@@ -180,6 +180,16 @@
           </div>
           <div class="tag-list" id="log-tag-filters"></div>
         </div>
+        <div class="flex gap-2 mt-2">
+          <button class="btn btn-secondary" id="btn-find-duplicates">Find Duplicates</button>
+        </div>
+        <div class="card" id="log-duplicates-card" style="display:none">
+          <div class="flex-between">
+            <div class="card-title">Duplicates Found</div>
+            <button class="btn btn-secondary" id="btn-hide-duplicates" style="font-size:12px;padding:4px 10px">Hide</button>
+          </div>
+          <div id="log-duplicates-list"></div>
+        </div>
         <div class="log-actions flex gap-2 mt-2" id="log-actions-bar" style="display:none">
           <button class="btn btn-danger" id="btn-log-delete-selected">Delete Selected</button>
           <button class="btn btn-primary" id="btn-log-reprocess-selected">Re-process Selected</button>
