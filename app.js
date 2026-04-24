@@ -1300,7 +1300,7 @@ document.getElementById('btn-log-reprocess-selected')?.addEventListener('click',
     e.status = 'pending_ocr';
     e.systolic = null; e.diastolic = null; e.heart_rate = null;
     e.pulse_pressure = null; e.mean_arterial_pressure = null; e.bp_category = null;
-    e.note = null; e.tags = []; e.machine_brand = null;
+    e.note = null; e.tags = []; e.machine_brand = null; e.error = null;
     await db.put('entries', e);
   }
   logSelectedIds.clear();
@@ -2252,6 +2252,7 @@ async function startBatchProcessing() {
 
       if (confidence.level === 'RED') {
         entry.status = 'failed';
+        entry.error = confidence.reason || 'Low confidence';
         await db.put('entries', entry);
       } else {
         entry.systolic = values.sys;
@@ -2270,6 +2271,7 @@ async function startBatchProcessing() {
     } catch (e) {
       console.error('[Batch] Processing error', e);
       entry.status = 'failed';
+      entry.error = e.message || 'Processing error';
       await db.put('entries', entry);
     }
 
@@ -2339,11 +2341,11 @@ function renderQueue() {
     db.get('images', e.id).then(img => {
       if (img && img.data) thumb.src = URL.createObjectURL(img.data);
     });
-    row.querySelector('.btn-process')?.addEventListener('click', () => { e.status = 'pending_ocr'; db.put('entries', e).then(refreshQueue).then(renderQueue); });
-    row.querySelector('.btn-retry')?.addEventListener('click', () => { e.status = 'pending_ocr'; db.put('entries', e).then(refreshQueue).then(renderQueue).then(() => { if (!state.isProcessing) startBatchProcessing(); }); });
+    row.querySelector('.btn-process')?.addEventListener('click', () => { e.status = 'pending_ocr'; e.error = null; db.put('entries', e).then(refreshQueue).then(renderQueue); });
+    row.querySelector('.btn-retry')?.addEventListener('click', () => { e.status = 'pending_ocr'; e.error = null; db.put('entries', e).then(refreshQueue).then(renderQueue).then(() => { if (!state.isProcessing) startBatchProcessing(); }); });
     row.querySelector('.btn-delete')?.addEventListener('click', () => showModal('Delete this queued photo?', async () => { await db.delete('entries', e.id); await db.delete('images', e.id); await refreshQueue(); renderQueue(); }));
     row.querySelector('.btn-edit')?.addEventListener('click', () => showQueueEdit(e.id));
-    row.querySelector('.btn-skip')?.addEventListener('click', () => { e.status = 'skipped'; db.put('entries', e).then(refreshQueue).then(renderQueue); });
+    row.querySelector('.btn-skip')?.addEventListener('click', () => { e.status = 'skipped'; e.error = null; db.put('entries', e).then(refreshQueue).then(renderQueue); });
     row.querySelector('.btn-enter')?.addEventListener('click', () => showQueueEdit(e.id));
   });
 }
@@ -2356,7 +2358,7 @@ function queueRowHTML(e) {
     processing: { chip: 'status-processing', icon: '\uD83D\uDD04', text: 'Processing' },
     done: { chip: 'status-done', icon: '\u2705', text: 'Done — ' + (e.systolic || '?') + '/' + (e.diastolic || '?') + ' \u00B7 ' + (e.heart_rate || '?') },
     low_confidence: { chip: 'status-low-confidence', icon: '\u26A0\uFE0F', text: 'Low Confidence — ' + (e.systolic || '?') + '/' + (e.diastolic || '?') },
-    failed: { chip: 'status-failed', icon: '\u274C', text: 'Failed — low confidence' },
+    failed: { chip: 'status-failed', icon: '\u274C', text: 'Failed' },
     skipped: { chip: 'status-skipped', icon: '\u23ED\uFE0F', text: 'Skipped' },
   };
   const s = statusMap[e.status] || statusMap.pending_ocr;
@@ -2377,7 +2379,7 @@ function queueRowHTML(e) {
     '<img class="queue-thumb" src="" alt="" />' +
     '<div class="queue-body">' +
       '<div class="queue-meta">' + ts + (noExif ? ' <span class="badge" style="font-size:10px">(no EXIF)</span>' : '') + '</div>' +
-      '<div class="status-chip ' + s.chip + '">' + s.icon + ' ' + s.text + '</div>' +
+      '<div class="status-chip ' + s.chip + '">' + s.icon + ' ' + s.text + (e.error ? ' — ' + escapeHtml(e.error) : '') + '</div>' +
       '<div class="queue-actions mt-2">' + actions + '</div>' +
     '</div>' +
   '</div>';
